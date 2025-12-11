@@ -127,6 +127,12 @@ $Project "Client (Episodic)"
 			$File	"hl2\vgui_rootpanel_hl2.cpp"
 			$File	"episodic\c_npc_puppet.cpp"
 		}
+
+		$Folder	"Render New"
+		{
+			$File "render_new\render_new.cpp"
+			$File "render_new\render_new.h"
+		}
 	}
 	
 }

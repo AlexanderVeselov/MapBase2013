@@ -325,6 +325,9 @@ void CViewRender::Init( void )
 	m_flLastFOV = default_fov.GetFloat();
 #endif
 
+#if 1
+	m_RenderNew.Init();
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -1283,7 +1286,10 @@ void CViewRender::Render( vrect_t *rect )
 			flags |= RENDERVIEW_SUPPRESSMONITORRENDERING;
 		}
 
-	    RenderView( view, nClearFlags, flags );
+#if 1
+		m_RenderNew.RenderFrame();
+#endif
+		RenderView( view, nClearFlags, flags );
 
 		if ( UseVR() )
 		{

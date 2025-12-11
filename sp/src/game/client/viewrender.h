@@ -15,6 +15,7 @@
 #include "iviewrender.h"
 #include "view_shared.h"
 #include "replay/ireplayscreenshotsystem.h"
+#include "render_new/render_new.h"
 
 
 //-----------------------------------------------------------------------------
@@ -559,6 +560,11 @@ private:
 #if defined( REPLAY_ENABLED )
 	CReplayScreenshotTaker	*m_pReplayScreenshotTaker;
 #endif
+
+#if 1
+	RenderNew m_RenderNew;
+#endif
+
 };
 
 #endif // VIEWRENDER_H

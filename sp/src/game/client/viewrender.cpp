@@ -4102,9 +4102,9 @@ void CRendering3dView::DrawWorld( float waterZAdjust )
 		return;
 	}
 
-	unsigned long engineFlags = BuildEngineDrawWorldListFlags( m_DrawFlags );
-
-	render->DrawWorldLists( m_pWorldRenderList, engineFlags, waterZAdjust );
+	//unsigned long engineFlags = BuildEngineDrawWorldListFlags( m_DrawFlags );
+	//
+	//render->DrawWorldLists( m_pWorldRenderList, engineFlags, waterZAdjust );
 }
 
 
