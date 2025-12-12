@@ -1287,6 +1287,9 @@ void CViewRender::Render( vrect_t *rect )
 		}
 
 #if 1
+		// Must disable threaded rendering to avoid flickering
+		ConVarRef mat_queue_mode("mat_queue_mode");
+		mat_queue_mode.SetValue(0);
 		m_RenderNew.RenderFrame();
 #endif
 		RenderView( view, nClearFlags, flags );
