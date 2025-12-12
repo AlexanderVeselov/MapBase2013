@@ -22,8 +22,39 @@ DXGI_FORMAT FormatToDXGI(ImageFormat format)
     case ImageFormat::kRGBA8_UNorm:   return DXGI_FORMAT_R8G8B8A8_UNORM;
     case ImageFormat::kRGBA8_SRGB:    return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     default:
+        assert(!"Unknown ImageFormat");
         return DXGI_FORMAT_UNKNOWN;
     }
+}
+
+D3D11_USAGE UsageToD3D11(BufferUsage usage)
+{
+    switch (usage)
+    {
+    case BufferUsage::kDefault:
+        return D3D11_USAGE_DEFAULT;
+    case BufferUsage::kDynamic:
+        return D3D11_USAGE_DYNAMIC;
+    default:
+        assert(!"Unknown BufferUsage");
+        return D3D11_USAGE_DEFAULT;
+    }
+}
+
+UINT BufferBindFlagsToD3D11(BufferBindFlags bind_flags)
+{
+    UINT flags = 0;
+    if (HasFlag(bind_flags, BufferBindFlags::kVertexBuffer))
+        flags |= D3D11_BIND_VERTEX_BUFFER;
+    if (HasFlag(bind_flags, BufferBindFlags::kIndexBuffer))
+        flags |= D3D11_BIND_INDEX_BUFFER;
+    if (HasFlag(bind_flags, BufferBindFlags::kConstantBuffer))
+        flags |= D3D11_BIND_CONSTANT_BUFFER;
+    if (HasFlag(bind_flags, BufferBindFlags::kShaderResource))
+        flags |= D3D11_BIND_SHADER_RESOURCE;
+    if (HasFlag(bind_flags, BufferBindFlags::kUnorderedAccess))
+        flags |= D3D11_BIND_UNORDERED_ACCESS;
+    return flags;
 }
 
 class D3D11Texture : public Texture
@@ -31,6 +62,7 @@ class D3D11Texture : public Texture
 public:
     D3D11Texture(ID3D11Device* device, uint32_t width, uint32_t height, ImageFormat format,
         uint32_t mip_levels = 1, UINT bind_flags = 0, UINT misc_flags = 0)
+        : Texture(width, height, format, mip_levels)
     {
         D3D11_TEXTURE2D_DESC d = {};
         d.Width = width;
@@ -74,12 +106,17 @@ private:
 class D3D11Buffer : public Buffer
 {
 public:
-    D3D11Buffer(ID3D11Device* device, uint32_t size)
+    D3D11Buffer(ID3D11Device* device, uint32_t size, BufferUsage usage, BufferBindFlags bind_flags)
+        : Buffer(size, usage, bind_flags)
     {
         D3D11_BUFFER_DESC desc = {};
         desc.ByteWidth = size;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.Usage = UsageToD3D11(usage);
+        desc.BindFlags = BufferBindFlagsToD3D11(bind_flags);
+        if (usage == BufferUsage::kDynamic)
+        {
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        }
         CheckResult(device->CreateBuffer(&desc, nullptr, &buffer_));
     }
 
@@ -141,7 +178,6 @@ private:
         {
             if (errors)
             {
-                //OutputDebugStringA((const char*)errors->GetBufferPointer());
                 MessageBoxA(nullptr, (const char*)errors->GetBufferPointer(), "Shader Compilation Error", MB_OK);
             }
             return false;
@@ -191,9 +227,9 @@ public:
             mip_levels, bind_flags, misc_flags);
     }
 
-    std::shared_ptr<Buffer> CreateBuffer(uint32_t size) override
+    std::shared_ptr<Buffer> CreateBuffer(uint32_t size, BufferUsage usage, BufferBindFlags bind_flags) override
     {
-        return std::make_shared<D3D11Buffer>(device_.Get(), size);
+        return std::make_shared<D3D11Buffer>(device_.Get(), size, usage, bind_flags);
     }
 
     std::shared_ptr<Pipeline> CreatePipeline(char const* vs, char const* ps) override
@@ -233,10 +269,17 @@ public:
         auto d3d11_texture = std::static_pointer_cast<D3D11Texture>(texture);
         ID3D11RenderTargetView* rtv = d3d11_texture->GetRTV();
         assert(rtv && "ClearTexture called on texture without RTV");
-        context_->OMSetRenderTargets(1, &rtv, nullptr);
 
         float color[4] = { r, g, b, a };
         context_->ClearRenderTargetView(rtv, color);
+    }
+
+    void SetRenderTarget(std::shared_ptr<Texture> texture) override
+    {
+        auto d3d11_texture = std::static_pointer_cast<D3D11Texture>(texture);
+        ID3D11RenderTargetView* rtv = d3d11_texture->GetRTV();
+        assert(rtv && "SetRenderTarget called on texture without RTV");
+        context_->OMSetRenderTargets(1, &rtv, nullptr);
     }
 
     void UploadBuffer(std::shared_ptr<Buffer> buffer, void const* data, size_t size) override
@@ -270,6 +313,21 @@ public:
         context_->UpdateSubresource(buf, 0, &box, data, 0, 0);
     }
 
+    void* MapBuffer(std::shared_ptr<Buffer> buffer) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+
+        D3D11_MAPPED_SUBRESOURCE mapped_resource = {};
+        CheckResult(context_->Map(d3d11_buffer->GetBuffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped_resource));
+        return mapped_resource.pData;
+    }
+
+    void UnmapBuffer(std::shared_ptr<Buffer> buffer) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+        context_->Unmap(d3d11_buffer->GetBuffer(), 0);
+    }
+
     void BindVertexBuffer(std::shared_ptr<Buffer> buffer) override
     {
         auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
@@ -280,6 +338,23 @@ public:
         context_->IASetVertexBuffers(0, 1, &buf, &stride, &offset);
         context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	}
+
+    void BindIndexBuffer(std::shared_ptr<Buffer> buffer) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+        ID3D11Buffer* buf = d3d11_buffer->GetBuffer();
+        assert(buf != nullptr);
+        context_->IASetIndexBuffer(buf, DXGI_FORMAT_R32_UINT, 0);
+    }
+
+    void BindConstantBuffer(std::shared_ptr<Buffer> buffer, uint32_t slot) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+        ID3D11Buffer* buf = d3d11_buffer->GetBuffer();
+        assert(buf != nullptr);
+        context_->VSSetConstantBuffers(slot, 1, &buf);
+        context_->PSSetConstantBuffers(slot, 1, &buf);
+    }
 
     void Flush() override
     {

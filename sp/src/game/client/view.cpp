@@ -1291,7 +1291,15 @@ void CViewRender::Render( vrect_t *rect )
 		// Must disable threaded rendering to avoid flickering
 		ConVarRef mat_queue_mode("mat_queue_mode");
 		mat_queue_mode.SetValue(0);
-		m_RenderNew->RenderFrame();
+
+		ViewSetup view_setup = {};
+		view_setup.fov = view.fov;
+        view_setup.origin = view.origin;
+        view_setup.angles = view.angles;
+        view_setup.zNear = view.zNear;
+        view_setup.zFar = view.zFar;
+		view_setup.m_flAspectRatio = view.m_flAspectRatio;
+		m_RenderNew->RenderView(view_setup);
 #endif
 		RenderView( view, nClearFlags, flags );
 
