@@ -42,7 +42,7 @@ void InitSharedTexture(rhi::RHI* rhi, std::shared_ptr<rhi::Texture>& shared_tex)
     shared_tex = rhi->CreateTexture(
         backbuffer_desc.Width,
         backbuffer_desc.Height,
-        rhi::ImageFormat::kBGRA8_UNorm,//DXGI_FORMAT_B8G8R8A8_UNORM,
+        rhi::ImageFormat::kBGRA8_UNorm,
         1,
         D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE,
         D3D11_RESOURCE_MISC_SHARED

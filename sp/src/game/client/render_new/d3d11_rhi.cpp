@@ -18,7 +18,7 @@ DXGI_FORMAT FormatToDXGI(ImageFormat format)
     case ImageFormat::kRGBA16_Float: return DXGI_FORMAT_R16G16B16A16_FLOAT;
     case ImageFormat::kRGBA8_SInt:    return DXGI_FORMAT_R8G8B8A8_SINT;
     case ImageFormat::kRGBA8_UInt:    return DXGI_FORMAT_R8G8B8A8_UINT;
-	case ImageFormat::kBGRA8_UNorm:   return DXGI_FORMAT_B8G8R8A8_UNORM;
+    case ImageFormat::kBGRA8_UNorm:   return DXGI_FORMAT_B8G8R8A8_UNORM;
     case ImageFormat::kRGBA8_UNorm:   return DXGI_FORMAT_R8G8B8A8_UNORM;
     case ImageFormat::kRGBA8_SRGB:    return DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     default:
@@ -50,7 +50,7 @@ public:
         CheckResult(device->CreateShaderResourceView(texture_.Get(), nullptr, &srv_));
     }
 
-	void* GetSharedHandle() const override
+    void* GetSharedHandle() const override
     {
         IDXGIResource* dxgi_res = nullptr;
         CheckResult(texture_->QueryInterface(&dxgi_res));
@@ -69,6 +69,24 @@ private:
     ComPtr<ID3D11Texture2D> texture_;
     ComPtr<ID3D11RenderTargetView> rtv_;
     ComPtr<ID3D11ShaderResourceView> srv_;
+};
+
+class D3D11Buffer : public Buffer
+{
+public:
+    D3D11Buffer(ID3D11Device* device, uint32_t size)
+    {
+        D3D11_BUFFER_DESC desc = {};
+        desc.ByteWidth = size;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        CheckResult(device->CreateBuffer(&desc, nullptr, &buffer_));
+    }
+
+    ID3D11Buffer* GetBuffer() const { return buffer_.Get(); }
+
+private:
+    ComPtr<ID3D11Buffer> buffer_;
 };
 
 class D3D11Pipeline : public Pipeline
@@ -144,14 +162,12 @@ public:
         // Create DXGI factory
         CheckResult(CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&dxgi_factory_));
 
-        // Get DXGI adapter
-        IDXGIAdapter* pDXGIAdapter = nullptr;
-        CheckResult(dxgi_factory_->EnumAdapters(adapter, &pDXGIAdapter));
+        ComPtr<IDXGIAdapter> adapterPtr;
+        CheckResult(dxgi_factory_->EnumAdapters(adapter, &adapterPtr));
 
-        // Create D3D11 device
         D3D_FEATURE_LEVEL featureLevel;
         CheckResult(D3D11CreateDevice(
-            pDXGIAdapter,
+            adapterPtr.Get(),
             D3D_DRIVER_TYPE_UNKNOWN,
             nullptr,
             0,
@@ -162,6 +178,10 @@ public:
             &featureLevel,
             &context_
         ));
+
+        if (featureLevel < D3D_FEATURE_LEVEL_11_0) {
+            assert(false); // Require D3D11 feature level 11.0 or higher
+        }
     }
 
     std::shared_ptr<Texture> CreateTexture(uint32_t width, uint32_t height, ImageFormat format,
@@ -171,9 +191,26 @@ public:
             mip_levels, bind_flags, misc_flags);
     }
 
+    std::shared_ptr<Buffer> CreateBuffer(uint32_t size) override
+    {
+        return std::make_shared<D3D11Buffer>(device_.Get(), size);
+    }
+
     std::shared_ptr<Pipeline> CreatePipeline(char const* vs, char const* ps) override
     {
         return std::make_shared<D3D11Pipeline>(device_.Get(), vs, ps);
+    }
+
+    void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) override
+    {
+        D3D11_VIEWPORT viewport = {};
+        viewport.TopLeftX = static_cast<float>(x);
+        viewport.TopLeftY = static_cast<float>(y);
+        viewport.Width = static_cast<float>(width);
+        viewport.Height = static_cast<float>(height);
+        viewport.MinDepth = 0.0f;
+        viewport.MaxDepth = 1.0f;
+        context_->RSSetViewports(1, &viewport);
     }
 
     void BindPipeline(std::shared_ptr<Pipeline> pipeline) override
@@ -190,15 +227,59 @@ public:
         context_->Draw(vertex_count, start_vertex);
     }
 
+    // TODO: ClearRenderTarget instead of ClearTexture
     void ClearTexture(std::shared_ptr<Texture> texture, float r, float g, float b, float a) override
     {
         auto d3d11_texture = std::static_pointer_cast<D3D11Texture>(texture);
         ID3D11RenderTargetView* rtv = d3d11_texture->GetRTV();
+        assert(rtv && "ClearTexture called on texture without RTV");
         context_->OMSetRenderTargets(1, &rtv, nullptr);
 
         float color[4] = { r, g, b, a };
         context_->ClearRenderTargetView(rtv, color);
     }
+
+    void UploadBuffer(std::shared_ptr<Buffer> buffer, void const* data, size_t size) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+        ID3D11Buffer* buf = d3d11_buffer->GetBuffer();
+        assert(buf != nullptr);
+
+        D3D11_BUFFER_DESC desc = {};
+        buf->GetDesc(&desc);
+
+        // Basic sanity check
+        assert(size <= desc.ByteWidth);
+
+        // Whole-buffer update — fastest path for DEFAULT usage
+        if (size == desc.ByteWidth)
+        {
+            context_->UpdateSubresource(buf, 0, nullptr, data, 0, 0);
+            return;
+        }
+
+        // Partial update using a box
+        D3D11_BOX box{};
+        box.left = 0;
+        box.right = (UINT)size;
+        box.top = 0;
+        box.bottom = 1;
+        box.front = 0;
+        box.back = 1;
+
+        context_->UpdateSubresource(buf, 0, &box, data, 0, 0);
+    }
+
+    void BindVertexBuffer(std::shared_ptr<Buffer> buffer) override
+    {
+        auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
+        ID3D11Buffer* buf = d3d11_buffer->GetBuffer();
+        assert(buf != nullptr);
+        UINT stride = 6 * sizeof(float); // Assuming position (3 floats) + color (3 floats)
+        UINT offset = 0;
+        context_->IASetVertexBuffers(0, 1, &buf, &stride, &offset);
+        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	}
 
     void Flush() override
     {

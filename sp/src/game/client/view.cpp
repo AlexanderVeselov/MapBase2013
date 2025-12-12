@@ -326,7 +326,8 @@ void CViewRender::Init( void )
 #endif
 
 #if 1
-	m_RenderNew.Init();
+	m_RenderNew = GetRenderNewInstance();
+	m_RenderNew->Init();
 #endif
 }
 
@@ -1290,7 +1291,7 @@ void CViewRender::Render( vrect_t *rect )
 		// Must disable threaded rendering to avoid flickering
 		ConVarRef mat_queue_mode("mat_queue_mode");
 		mat_queue_mode.SetValue(0);
-		m_RenderNew.RenderFrame();
+		m_RenderNew->RenderFrame();
 #endif
 		RenderView( view, nClearFlags, flags );
 

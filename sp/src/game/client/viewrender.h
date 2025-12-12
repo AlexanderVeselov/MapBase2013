@@ -562,7 +562,7 @@ private:
 #endif
 
 #if 1
-	RenderNew m_RenderNew;
+	RenderNew* m_RenderNew;
 #endif
 
 };
