@@ -55,6 +55,7 @@ class RenderNew
 public:
     RenderNew() = default;
     virtual void Init() = 0;
+    virtual void LoadLevel(char const* level_name) = 0;
     virtual void RenderView(ViewSetup const& view_setup) = 0;
 };
 

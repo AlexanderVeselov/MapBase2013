@@ -353,6 +353,10 @@ void CViewRender::LevelInit( void )
 
 	// Init all IScreenSpaceEffects
 	g_pScreenSpaceEffects->InitScreenSpaceEffects( );
+
+#if 1
+	m_RenderNew->LoadLevel(engine->GetLevelName());
+#endif
 }
 
 //-----------------------------------------------------------------------------
