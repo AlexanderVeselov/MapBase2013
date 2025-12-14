@@ -109,10 +109,12 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices)
             float uv2[2];
             CalcUV(v2, tex, &uv2[0]);
 
+            Vector normal = (v2 - v0).Cross(v1 - v0).Normalized();
+
             // Emit the triangle
-            out_vertices.push_back({ v0, Vector(1, 0, 0), uv0[0], uv0[1] });
-            out_vertices.push_back({ v1, Vector(0, 1, 0), uv1[0], uv1[1] });
-            out_vertices.push_back({ v2, Vector(0, 0, 1), uv2[0], uv2[1] });
+            out_vertices.push_back({ v0, normal, uv0[0], uv0[1] });
+            out_vertices.push_back({ v1, normal, uv1[0], uv1[1] });
+            out_vertices.push_back({ v2, normal, uv2[0], uv2[1] });
         }
     }
 

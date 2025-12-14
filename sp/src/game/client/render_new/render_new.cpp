@@ -100,8 +100,12 @@ void RenderImpl::Init()
 
         float4 main(PSInput input) : SV_TARGET
         {
-            return float4(frac(input.texcoord / 512.0f), 0.0f, 1.0f);
-            return float4(input.color, 1.0);
+            //return float4(frac(input.texcoord / 512.0f), 0.0f, 1.0f);
+
+            float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
+            float3 normal = normalize(input.color);
+            float diffuse = saturate(dot(normal, light));
+            return float4(diffuse, diffuse, diffuse, 1.0);
         }
     )";
 
