@@ -71,18 +71,21 @@ void RenderImpl::Init()
         struct VSInput
         {
             float3 position : POSITION;
-            float3 color : COLOR0;
+            float3 color    : COLOR0;
+            float2 texcoord : TEXCOORD0;
         };
         struct VSOutput
         {
             float4 position : SV_POSITION;
             float3 color : COLOR0;
+            float2 texcoord : TEXCOORD0;
         };
         VSOutput main(VSInput input)
         {
             VSOutput output;
             output.position = mul(float4(input.position, 1.0), g_view_projection);
             output.color = input.color;
+            output.texcoord = input.texcoord;
             return output;
         }
     )";
@@ -92,10 +95,12 @@ void RenderImpl::Init()
         {
             float4 position : SV_POSITION;
             float3 color : COLOR0;
+            float2 texcoord : TEXCOORD0;
         };
 
         float4 main(PSInput input) : SV_TARGET
         {
+            return float4(frac(input.texcoord / 512.0f), 0.0f, 1.0f);
             return float4(input.color, 1.0);
         }
     )";
@@ -107,7 +112,10 @@ void RenderImpl::Init()
         RWTexture2D<float4> g_output_tex : register(u0);
 
         // https://aras-p.info/blog/2009/07/30/encoding-floats-to-rgba-the-final
-        float4 EncodeFloatRGBA(float v) {
+        float4 EncodeFloatRGBA(float v)
+        {
+            // Fix corner case when all frac() return zero
+            if (v == 1.0f) return float4(1.0f, 0.0f, 0.0f, 0.0f);
             float4 enc = float4(1.0, 255.0, 65025.0, 16581375.0) * v;
             enc = frac(enc);
             enc -= enc.yzww * float4(1.0/255.0,1.0/255.0,1.0/255.0,0.0);
@@ -163,7 +171,7 @@ void RenderImpl::RenderView(ViewSetup const& view_setup)
     rhi_->ClearColorTexture(color_texture_, 0.0f, 0.5f, 0.5f, 1.0f);
     rhi_->ClearDepthTexture(depth_texture_, 1.0f);
     rhi_->BindGraphicsPipeline(pipeline_);
-    rhi_->BindVertexBuffer(vertex_buffer_);
+    rhi_->BindVertexBuffer(vertex_buffer_, sizeof(Vertex));
     rhi_->Draw(vertex_buffer_->GetSize() / sizeof(Vertex), 0);
 
     rhi_->SetRenderTarget(nullptr, nullptr);

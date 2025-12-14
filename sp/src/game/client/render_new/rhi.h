@@ -123,7 +123,7 @@ public:
     virtual void UnmapBuffer(std::shared_ptr<Buffer> buffer) = 0;
 
     // Resource binding
-    virtual void BindVertexBuffer(std::shared_ptr<Buffer> buffer) = 0;
+    virtual void BindVertexBuffer(std::shared_ptr<Buffer> buffer, uint32_t stride) = 0;
     virtual void BindIndexBuffer(std::shared_ptr<Buffer> buffer) = 0;
 
     virtual void Flush() = 0;

@@ -62,7 +62,7 @@ void InitDepthWriteShaders()
         {
             PSOut o;
             float4 encoded_depth = tex2D(s0, i.uv);
-            o.color = 0;
+            o.color = 0.0f;//DecodeFloatRGBA(encoded_depth);
             o.depth = DecodeFloatRGBA(encoded_depth);
             return o;
         }

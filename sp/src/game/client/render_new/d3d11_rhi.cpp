@@ -236,8 +236,9 @@ public:
 
         D3D11_INPUT_ELEMENT_DESC input_layout[] =
         {
-            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                          D3D11_INPUT_PER_VERTEX_DATA, 0 },
-            { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(float) * 3,           D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            { "COLOR",    0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         };
 
         CheckResult(device->CreateInputLayout(
@@ -590,12 +591,11 @@ public:
         context_->Unmap(d3d11_buffer->GetBuffer(), 0);
     }
 
-    void BindVertexBuffer(std::shared_ptr<Buffer> buffer) override
+    void BindVertexBuffer(std::shared_ptr<Buffer> buffer, uint32_t stride) override
     {
         auto d3d11_buffer = std::static_pointer_cast<D3D11Buffer>(buffer);
         ID3D11Buffer* buf = d3d11_buffer->GetBuffer();
         assert(buf != nullptr);
-        UINT stride = 6 * sizeof(float); // Assuming position (3 floats) + color (3 floats)
         UINT offset = 0;
         context_->IASetVertexBuffers(0, 1, &buf, &stride, &offset);
 	}
