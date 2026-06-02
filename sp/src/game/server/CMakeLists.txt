@@ -72,6 +72,14 @@ target_compile_definitions(server PRIVATE
     GLOWS_ENABLE
 )
 
+if(SOURCE_SDK_MAPBASE_VSCRIPT)
+    target_compile_definitions(server PRIVATE MAPBASE_VSCRIPT)
+endif()
+
+if(SOURCE_SDK_NEW_RESPONSE_SYSTEM)
+    target_compile_definitions(server PRIVATE NEW_RESPONSE_SYSTEM)
+endif()
+
 if(SERVER_IS_EPISODIC)
     target_compile_definitions(server PRIVATE HL2_EPISODIC)
 endif()
@@ -93,6 +101,12 @@ target_link_libraries(server PRIVATE
     tier3
     steam_api
     libprotobuf
-    vscript
-    responserules
 )
+
+if(SOURCE_SDK_MAPBASE_VSCRIPT)
+    target_link_libraries(server PRIVATE vscript)
+endif()
+
+if(SOURCE_SDK_NEW_RESPONSE_SYSTEM)
+    target_link_libraries(server PRIVATE responserules)
+endif()

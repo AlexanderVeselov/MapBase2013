@@ -79,6 +79,22 @@ target_compile_definitions(client PRIVATE
     GLOWS_ENABLE
 )
 
+if(SOURCE_SDK_MAPBASE_VSCRIPT)
+    target_compile_definitions(client PRIVATE MAPBASE_VSCRIPT)
+endif()
+
+if(SOURCE_SDK_NEW_RESPONSE_SYSTEM)
+    target_compile_definitions(client PRIVATE NEW_RESPONSE_SYSTEM)
+endif()
+
+if(SOURCE_SDK_MAPBASE_RPC)
+    target_compile_definitions(client PRIVATE
+        MAPBASE_RPC
+        DISCORD_RPC
+        STEAM_RPC
+    )
+endif()
+
 if(CLIENT_IS_EPISODIC)
     target_compile_definitions(client PRIVATE HL2_EPISODIC)
 endif()
@@ -96,6 +112,10 @@ source_sdk_imported_library(libz)
 source_sdk_imported_library(libprotobuf)
 source_sdk_imported_common_library(libcurl)
 
+if(SOURCE_SDK_MAPBASE_RPC)
+    source_sdk_imported_library(discord-rpc)
+endif()
+
 target_link_libraries(client PRIVATE
     bitmap
     choreoobjects
@@ -112,9 +132,19 @@ target_link_libraries(client PRIVATE
     libcurl
     libz
     libprotobuf
-    vscript
-    responserules
 )
+
+if(SOURCE_SDK_MAPBASE_VSCRIPT)
+    target_link_libraries(client PRIVATE vscript)
+endif()
+
+if(SOURCE_SDK_NEW_RESPONSE_SYSTEM)
+    target_link_libraries(client PRIVATE responserules)
+endif()
+
+if(SOURCE_SDK_MAPBASE_RPC)
+    target_link_libraries(client PRIVATE discord-rpc)
+endif()
 
 if(SOURCE_SDK_RENDER_NEW)
     target_compile_definitions(client PRIVATE SOURCE_SDK_RENDER_NEW)

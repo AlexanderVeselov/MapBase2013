@@ -557,16 +557,22 @@ set(CLIENT_MAPBASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/mapbase/c_weapon_custom_hl2.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/game_timer.cpp"
     "${SOURCE_SDK_ROOT}/game/client/mapbase/hud_generic_timer.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/mapbase/logic_script_client.cpp"
     "${SOURCE_SDK_ROOT}/game/client/mapbase/mapbase_autocubemap.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_game_log.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_playeranimstate.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_rpc.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_shared.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_usermessages.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/MapEdit.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/matchers.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/protagonist_system.cpp"
+)
+
+set(CLIENT_MAPBASE_RPC_SOURCES
+    "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_rpc.cpp"
+)
+
+set(CLIENT_MAPBASE_VSCRIPT_SOURCES
+    "${SOURCE_SDK_ROOT}/game/shared/mapbase/logic_script_client.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_consts_shared.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_consts_weapons.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_funcs_hl2.cpp"
@@ -612,6 +618,18 @@ if(SOURCE_SDK_MAPBASE)
     list(APPEND CLIENT_EPISODIC_SOURCES
         ${CLIENT_MAPBASE_SOURCES}
     )
+
+    if(SOURCE_SDK_MAPBASE_RPC)
+        list(APPEND CLIENT_EPISODIC_SOURCES
+            ${CLIENT_MAPBASE_RPC_SOURCES}
+        )
+    endif()
+
+    if(SOURCE_SDK_MAPBASE_VSCRIPT)
+        list(APPEND CLIENT_EPISODIC_SOURCES
+            ${CLIENT_MAPBASE_VSCRIPT_SOURCES}
+        )
+    endif()
 endif()
 
 if(SOURCE_SDK_SIXENSE)

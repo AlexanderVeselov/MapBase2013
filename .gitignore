@@ -93,6 +93,8 @@ sp/src/materialsystem/*.dll
 sp/src/materialsystem/*.pdb
 sp/src/vgui2/*.dll
 sp/src/vgui2/*.pdb
+sp/src/build/
+mp/src/build/
 
 # Build support files
 sp/src/devtools/gcc9+support.o

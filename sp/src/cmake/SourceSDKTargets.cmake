@@ -1,3 +1,20 @@
+function(source_sdk_consume_optional_flag flag_name out_var)
+    set(remaining_args ${ARGN})
+    set(flag_value FALSE)
+
+    list(LENGTH remaining_args remaining_len)
+    if(remaining_len GREATER 0)
+        list(GET remaining_args 0 first_arg)
+        if(first_arg STREQUAL "${flag_name}")
+            set(flag_value TRUE)
+            list(REMOVE_AT remaining_args 0)
+        endif()
+    endif()
+
+    set(${out_var} ${flag_value} PARENT_SCOPE)
+    set(${out_var}_ARGS ${remaining_args} PARENT_SCOPE)
+endfunction()
+
 function(source_sdk_static_library target_name)
     add_library(${target_name} STATIC ${ARGN})
 
@@ -37,7 +54,18 @@ function(source_sdk_imported_library target_name)
 endfunction()
 
 function(source_sdk_console_executable target_name)
-    add_executable(${target_name} ${ARGN})
+    source_sdk_consume_optional_flag(NO_MEMOVERRIDE skip_memoverride ${ARGN})
+    set(target_sources ${skip_memoverride_ARGS})
+
+    if(NOT skip_memoverride)
+        set(default_memoverride "${SOURCE_SDK_ROOT}/public/tier0/memoverride.cpp")
+        list(FIND target_sources "${default_memoverride}" memoverride_index)
+        if(memoverride_index EQUAL -1)
+            list(APPEND target_sources "${default_memoverride}")
+        endif()
+    endif()
+
+    add_executable(${target_name} ${target_sources})
 
     target_link_libraries(${target_name} PRIVATE
         source_sdk_base
@@ -78,7 +106,7 @@ function(source_sdk_console_executable target_name)
         )
     endif()
 
-    source_group(TREE "${SOURCE_SDK_ROOT}" FILES ${ARGN})
+    source_group(TREE "${SOURCE_SDK_ROOT}" FILES ${target_sources})
 endfunction()
 
 function(source_sdk_imported_common_library target_name)
@@ -101,7 +129,18 @@ function(source_sdk_imported_common_library target_name)
 endfunction()
 
 function(source_sdk_shared_library target_name)
-    add_library(${target_name} SHARED ${ARGN})
+    source_sdk_consume_optional_flag(NO_MEMOVERRIDE skip_memoverride ${ARGN})
+    set(target_sources ${skip_memoverride_ARGS})
+
+    if(NOT skip_memoverride)
+        set(default_memoverride "${SOURCE_SDK_ROOT}/public/tier0/memoverride.cpp")
+        list(FIND target_sources "${default_memoverride}" memoverride_index)
+        if(memoverride_index EQUAL -1)
+            list(APPEND target_sources "${default_memoverride}")
+        endif()
+    endif()
+
+    add_library(${target_name} SHARED ${target_sources})
 
     target_link_libraries(${target_name} PRIVATE
         source_sdk_base
@@ -156,7 +195,7 @@ function(source_sdk_shared_library target_name)
         )
     endif()
 
-    source_group(TREE "${SOURCE_SDK_ROOT}" FILES ${ARGN})
+    source_group(TREE "${SOURCE_SDK_ROOT}" FILES ${target_sources})
 endfunction()
 
 function(source_sdk_copy_game_dll target_name)
@@ -182,6 +221,18 @@ function(source_sdk_msvc_precompiled_header target_name pch_header pch_source pc
     endif()
 
     set(no_pch_sources ${ARGN})
+    set(default_memoverride "${SOURCE_SDK_ROOT}/public/tier0/memoverride.cpp")
+    get_target_property(target_sources ${target_name} SOURCES)
+    if(target_sources)
+        list(FIND target_sources "${default_memoverride}" memoverride_index)
+        if(NOT memoverride_index EQUAL -1)
+            list(FIND no_pch_sources "${default_memoverride}" no_pch_memoverride_index)
+            if(no_pch_memoverride_index EQUAL -1)
+                list(APPEND no_pch_sources "${default_memoverride}")
+            endif()
+        endif()
+    endif()
+
     set(pch_output "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${pch_output_name}.pch")
 
     target_compile_options(${target_name} PRIVATE

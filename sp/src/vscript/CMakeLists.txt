@@ -45,6 +45,12 @@ target_include_directories(vscript PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/sqdbg/include"
 )
 
+if(SOURCE_SDK_MAPBASE_VSCRIPT)
+    target_compile_definitions(vscript PRIVATE
+        MAPBASE_VSCRIPT
+    )
+endif()
+
 set_source_files_properties(${VSCRIPT_SQUIRREL_SOURCES} PROPERTIES
     COMPILE_OPTIONS "/wd4100;/wd4611;/wd4127;/wd4244;/wd4702;/wd4706;/wd4800;/wd5033"
 )

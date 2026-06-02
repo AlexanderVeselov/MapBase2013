@@ -27,12 +27,10 @@ set(SERVER_BASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/server/ai_blended_movement.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_concommands.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_condition.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/ai_criteria_new.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_default.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_dynamiclink.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_event.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_eventresponse.cpp"
-    "${SOURCE_SDK_ROOT}/game/server/ai_expresserfollowup.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_goalentity.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_hint.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_hull.cpp"
@@ -55,16 +53,13 @@ set(SERVER_BASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/server/ai_planesolver.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_playerally.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_relationship.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/ai_responsesystem_new.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_route.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_saverestore.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_schedule.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_scriptconditions.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_senses.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_sentence.cpp"
-    "${SOURCE_SDK_ROOT}/game/server/ai_speech_new.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_speechfilter.cpp"
-    "${SOURCE_SDK_ROOT}/game/server/ai_speechqueue.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_squad.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_squadslot.cpp"
     "${SOURCE_SDK_ROOT}/game/server/ai_tacticalservices.cpp"
@@ -384,6 +379,20 @@ set(SERVER_BASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/server/stdafx.cpp"
 )
 
+set(SERVER_NEW_RESPONSE_SYSTEM_SOURCES
+    "${SOURCE_SDK_ROOT}/game/shared/ai_criteria_new.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/ai_expresserfollowup.cpp"
+    "${SOURCE_SDK_ROOT}/game/shared/ai_responsesystem_new.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/ai_speech_new.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/ai_speechqueue.cpp"
+)
+
+set(SERVER_LEGACY_RESPONSE_SYSTEM_SOURCES
+    "${SOURCE_SDK_ROOT}/game/server/AI_Criteria.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/AI_ResponseSystem.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/ai_speech.cpp"
+)
+
 set(SERVER_TEMP_ENTITY_SOURCES
     "${SOURCE_SDK_ROOT}/game/server/basetempentity.cpp"
     "${SOURCE_SDK_ROOT}/game/server/event_tempentity_tester.cpp"
@@ -615,12 +624,10 @@ set(SERVER_MAPBASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/server/mapbase/logic_eventlistener.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/logic_externaldata.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/logic_register_activator.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/mapbase/logic_script_client.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/logic_skill.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/logic_substring.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_game_log.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_playeranimstate.cpp"
-    "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_rpc.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_shared.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_usermessages.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/MapEdit.cpp"
@@ -635,12 +642,20 @@ set(SERVER_MAPBASE_SOURCES
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/protagonist_system.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/SystemConvarMod.cpp"
     "${SOURCE_SDK_ROOT}/game/server/mapbase/vgui_text_display.cpp"
+    "${SOURCE_SDK_ROOT}/game/server/mapbase/weapon_custom_hl2.cpp"
+)
+
+set(SERVER_MAPBASE_RPC_SOURCES
+    "${SOURCE_SDK_ROOT}/game/shared/mapbase/mapbase_rpc.cpp"
+)
+
+set(SERVER_MAPBASE_VSCRIPT_SOURCES
+    "${SOURCE_SDK_ROOT}/game/shared/mapbase/logic_script_client.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_consts_shared.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_consts_weapons.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_funcs_hl2.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_funcs_shared.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/vscript_singletons.cpp"
-    "${SOURCE_SDK_ROOT}/game/server/mapbase/weapon_custom_hl2.cpp"
     "${SOURCE_SDK_ROOT}/game/shared/mapbase/weapon_custom_scripted.cpp"
 )
 
@@ -657,10 +672,32 @@ set(SERVER_EPISODIC_SOURCES
     ${SERVER_HL2MP_WEAPON_SOURCES}
 )
 
+if(SOURCE_SDK_NEW_RESPONSE_SYSTEM)
+    list(APPEND SERVER_EPISODIC_SOURCES
+        ${SERVER_NEW_RESPONSE_SYSTEM_SOURCES}
+    )
+else()
+    list(APPEND SERVER_EPISODIC_SOURCES
+        ${SERVER_LEGACY_RESPONSE_SYSTEM_SOURCES}
+    )
+endif()
+
 if(SOURCE_SDK_MAPBASE)
     list(APPEND SERVER_EPISODIC_SOURCES
         ${SERVER_MAPBASE_SOURCES}
     )
+
+    if(SOURCE_SDK_MAPBASE_RPC)
+        list(APPEND SERVER_EPISODIC_SOURCES
+            ${SERVER_MAPBASE_RPC_SOURCES}
+        )
+    endif()
+
+    if(SOURCE_SDK_MAPBASE_VSCRIPT)
+        list(APPEND SERVER_EPISODIC_SOURCES
+            ${SERVER_MAPBASE_VSCRIPT_SOURCES}
+        )
+    endif()
 endif()
 
 list(APPEND SERVER_EPISODIC_SOURCES

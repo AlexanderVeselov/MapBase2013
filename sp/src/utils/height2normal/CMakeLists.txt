@@ -1,4 +1,4 @@
-source_sdk_console_executable(height2normal
+source_sdk_console_executable(height2normal NO_MEMOVERRIDE
     height2normal.cpp
 )
 
