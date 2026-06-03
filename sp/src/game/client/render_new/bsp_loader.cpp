@@ -2,6 +2,8 @@
 #include "bspfile.h"
 
 #include <fstream>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 template<typename T>
@@ -20,7 +22,6 @@ bool ReadLump(std::ifstream& f, lump_t const& l, std::vector<T>& out)
 
 inline void CalcUV(const Vector& p, const texinfo_t& ti, float uv[2])
 {
-    // Compute UV in "texel space" (not normalized to 0..1)
     Vector uAxis(ti.textureVecsTexelsPerWorldUnits[0][0], ti.textureVecsTexelsPerWorldUnits[0][1], ti.textureVecsTexelsPerWorldUnits[0][2]);
     Vector vAxis(ti.textureVecsTexelsPerWorldUnits[1][0], ti.textureVecsTexelsPerWorldUnits[1][1], ti.textureVecsTexelsPerWorldUnits[1][2]);
 
@@ -28,7 +29,24 @@ inline void CalcUV(const Vector& p, const texinfo_t& ti, float uv[2])
     uv[1] = p.Dot(vAxis) + ti.textureVecsTexelsPerWorldUnits[1][3];
 }
 
-void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices)
+char const* GetTexdataString(std::vector<int32_t> const& string_table, std::vector<char> const& string_data,
+    int name_string_table_id)
+{
+    if (name_string_table_id < 0 || name_string_table_id >= static_cast<int>(string_table.size()))
+    {
+        return nullptr;
+    }
+
+    int string_offset = string_table[name_string_table_id];
+    if (string_offset < 0 || string_offset >= static_cast<int>(string_data.size()))
+    {
+        return nullptr;
+    }
+
+    return string_data.data() + string_offset;
+}
+
+void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
 
@@ -53,32 +71,60 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices)
     std::vector<int32_t>   surfedges;
     std::vector<dface_t>   faces;
     std::vector<texinfo_t> texinfo;
+    std::vector<dtexdata_t> texdata;
+    std::vector<int32_t> texdata_string_table;
+    std::vector<char> texdata_string_data;
 
     if (!ReadLump(f, hdr.lumps[LUMP_VERTEXES], vertexes))   return;
     if (!ReadLump(f, hdr.lumps[LUMP_EDGES], edges))         return;
     if (!ReadLump(f, hdr.lumps[LUMP_SURFEDGES], surfedges)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_FACES], faces))         return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXINFO], texinfo))     return;
+    if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA], texdata))     return;
+    if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_TABLE], texdata_string_table)) return;
+    if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_DATA], texdata_string_data)) return;
 
-    // Triangulate each face using triangle fan around vertex0
-    // face polygon vertices are traced via surfedges -> edges -> vertex indices.
+    std::unordered_map<std::string, uint32_t> material_indices;
+
     for (int fi = 0; fi < (int)faces.size(); ++fi)
     {
         const dface_t& face = faces[fi];
 
-        // Skip invalid or tiny faces
         if (face.numedges < 3) continue;
-
-        // Skip displacements (optional)
         if (face.dispinfo != -1) continue;
 
         if (face.texinfo < 0 || face.texinfo >= (int)texinfo.size())
             continue;
 
         const texinfo_t& tex = texinfo[face.texinfo];
+        if (tex.texdata < 0 || tex.texdata >= static_cast<int>(texdata.size()))
+            continue;
+
+        dtexdata_t const& face_texdata = texdata[tex.texdata];
+        char const* material_name_ptr =
+            GetTexdataString(texdata_string_table, texdata_string_data, face_texdata.nameStringTableID);
+        if (!material_name_ptr || material_name_ptr[0] == '\0')
+            continue;
 
         if (tex.flags & (SURF_SKY | SURF_NODRAW | SURF_HINT | SURF_SKIP | SURF_TRIGGER))
             continue;
+
+        std::string material_name = material_name_ptr;
+        uint32_t texture_index = 0;
+        auto [it, inserted] = material_indices.emplace(material_name, 0);
+        if (inserted)
+        {
+            out_materials.push_back(BspMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
+            texture_index = static_cast<uint32_t>(out_materials.size());
+            it->second = texture_index;
+        }
+        else
+        {
+            texture_index = it->second;
+        }
+
+        float uv_scale_u = face_texdata.view_width > 0 ? 1.0f / static_cast<float>(face_texdata.view_width) : 1.0f;
+        float uv_scale_v = face_texdata.view_height > 0 ? 1.0f / static_cast<float>(face_texdata.view_height) : 1.0f;
 
         const int first = face.firstedge;
         const int count = face.numedges;
@@ -86,7 +132,6 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices)
         if (first < 0 || first + count >(int)surfedges.size())
             continue;
 
-        // Triangle fan around first vertex
         int32_t first_surfedge = surfedges[first];
         uint16_t first_index = edges[abs(first_surfedge)].v[(first_surfedge < 0)];
 
@@ -104,18 +149,22 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices)
 
             float uv0[2];
             CalcUV(v0, tex, &uv0[0]);
+            uv0[0] *= uv_scale_u;
+            uv0[1] *= uv_scale_v;
             float uv1[2];
             CalcUV(v1, tex, &uv1[0]);
+            uv1[0] *= uv_scale_u;
+            uv1[1] *= uv_scale_v;
             float uv2[2];
             CalcUV(v2, tex, &uv2[0]);
+            uv2[0] *= uv_scale_u;
+            uv2[1] *= uv_scale_v;
 
             Vector normal = (v2 - v0).Cross(v1 - v0).Normalized();
 
-            // Emit the triangle
-            out_vertices.push_back({ v0, normal, uv0[0], uv0[1] });
-            out_vertices.push_back({ v1, normal, uv1[0], uv1[1] });
-            out_vertices.push_back({ v2, normal, uv2[0], uv2[1] });
+            out_vertices.push_back({v0, normal, {uv0[0], uv0[1]}, texture_index});
+            out_vertices.push_back({v1, normal, {uv1[0], uv1[1]}, texture_index});
+            out_vertices.push_back({v2, normal, {uv2[0], uv2[1]}, texture_index});
         }
     }
-
 }
