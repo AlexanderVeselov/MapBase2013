@@ -66,7 +66,10 @@ private:
     gpu::BufferPtr vertex_buffer_;
     gpu::BufferPtr view_proj_buffer_;
     gpu::SamplerPtr texture_sampler_;
+    gpu::SamplerPtr lightmap_sampler_;
     gpu::ImagePtr fallback_texture_;
+    gpu::ImagePtr fallback_lightmap_texture_;
+    gpu::ImagePtr lightmap_texture_;
     std::vector<gpu::ImagePtr> material_textures_;
     uint32_t vertex_count_ = 0;
     std::string shader_dir_;
@@ -173,12 +176,24 @@ void RenderImpl::Init()
     sampler_desc.address_v = gpu::SamplerAddressMode::kRepeat;
     texture_sampler_ = device_->GetSampler(sampler_desc);
 
+    gpu::SamplerDesc lightmap_sampler_desc;
+    lightmap_sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
+    lightmap_sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
+    lightmap_sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
+    lightmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
+    lightmap_sampler_ = device_->GetSampler(lightmap_sampler_desc);
+
     std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
     fallback_texture_ = CreateTextureImage(2, 2, fallback_pixels.data(), fallback_pixels.size());
+    std::array<uint8_t, 4> fallback_lightmap_pixels = {255, 255, 255, 255};
+    fallback_lightmap_texture_ = CreateTextureImage(1, 1, fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
+    lightmap_texture_ = fallback_lightmap_texture_;
 
     pipeline_descriptor_set_ = pipeline_->CreateDescriptorSet();
     pipeline_descriptor_set_->BindBuffer(*view_proj_buffer_, 0);
     pipeline_descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
+    pipeline_descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
+    pipeline_descriptor_set_->BindImage(*lightmap_texture_, 0, 3);
 
     copy_depth_descriptor_set_ = copy_depth_pipeline_->CreateDescriptorSet();
     copy_depth_descriptor_set_->BindImage(*depth_texture_, 0);
@@ -189,7 +204,19 @@ void RenderImpl::LoadLevel(char const* level_name)
 {
     std::vector<Vertex> cpu_vertices;
     std::vector<BspMaterial> bsp_materials;
-    LoadBsp(level_name, cpu_vertices, bsp_materials);
+    BspLightmapAtlas lightmap_atlas;
+    LoadBsp(level_name, cpu_vertices, bsp_materials, lightmap_atlas);
+
+    if (!lightmap_atlas.rgba_pixels.empty() && lightmap_atlas.width > 0 && lightmap_atlas.height > 0)
+    {
+        lightmap_texture_ = CreateTextureImage(static_cast<uint32_t>(lightmap_atlas.width),
+            static_cast<uint32_t>(lightmap_atlas.height), lightmap_atlas.rgba_pixels.data(), lightmap_atlas.rgba_pixels.size());
+    }
+    else
+    {
+        lightmap_texture_ = fallback_lightmap_texture_;
+    }
+
     RebuildMaterialBindings(bsp_materials, cpu_vertices);
 
     vertex_count_ = static_cast<uint32_t>(cpu_vertices.size());
@@ -432,6 +459,8 @@ void RenderImpl::RebuildMaterialBindings(std::vector<BspMaterial> const& bsp_mat
     pipeline_descriptor_set_->BindBuffer(*view_proj_buffer_, 0);
     pipeline_descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     pipeline_descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
+    pipeline_descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
+    pipeline_descriptor_set_->BindImage(*(lightmap_texture_ ? lightmap_texture_ : fallback_lightmap_texture_), 0, 3);
 
     SubmitAndWait();
 }

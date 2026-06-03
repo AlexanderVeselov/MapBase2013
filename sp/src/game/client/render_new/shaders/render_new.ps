@@ -3,19 +3,43 @@ struct PSInput
     float4 position : SV_POSITION;
     float3 normal : NORMAL;
     float2 texcoord : TEXCOORD0;
-    uint texture_index : TEXCOORD1;
+    float2 lightmap_texcoord : TEXCOORD1;
+    uint texture_index : TEXCOORD2;
 };
 
 static const uint RENDER_NEW_MAX_TEXTURES = 512;
 
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);
+Texture2D g_lightmap : register(t0, space3);
 SamplerState g_sampler : register(s0, space2);
+SamplerState g_lightmap_sampler : register(s1, space2);
+
+float3 SrgbToLinear(float3 color)
+{
+    float3 use_linear = step(color, float3(0.04045f, 0.04045f, 0.04045f));
+    float3 linear_low = color / 12.92f;
+    float3 linear_high = pow((color + 0.055f) / 1.055f, 2.4f);
+    return lerp(linear_high, linear_low, use_linear);
+}
+
+float3 LinearToSrgb(float3 color)
+{
+    color = saturate(color);
+    float3 use_linear = step(color, float3(0.0031308f, 0.0031308f, 0.0031308f));
+    float3 srgb_low = color * 12.92f;
+    float3 srgb_high = 1.055f * pow(color, 1.0f / 2.4f) - 0.055f;
+    return lerp(srgb_high, srgb_low, use_linear);
+}
 
 float4 main(PSInput input) : SV_TARGET
 {
     float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
     float3 normal = normalize(input.normal);
-    float diffuse = saturate(dot(normal, light));
+    float diffuse = 1.0f;//saturate(dot(normal, light));
     float4 albedo = g_textures[NonUniformResourceIndex(input.texture_index)].Sample(g_sampler, input.texcoord);
-    return float4(albedo.rgb * diffuse, albedo.a);
+    float3 albedo_linear = SrgbToLinear(albedo.rgb);
+    float3 lightmap_linear = g_lightmap.Sample(g_lightmap_sampler, input.lightmap_texcoord).rgb;
+    float3 direct_linear = albedo_linear * diffuse;
+    float3 output_color = LinearToSrgb(direct_linear * lightmap_linear);
+    return float4(output_color, albedo.a);
 }
