@@ -6080,6 +6080,19 @@ void CBaseWorldView::DrawExecute( float waterHeight, view_id_t viewID, float wat
 	if ( m_DrawFlags & DF_DRAW_ENTITITES )
 	{
 		DrawWorld( waterZAdjust );
+
+		if ( viewID == VIEW_MAIN && m_pMainView->GetRenderNew() )
+		{
+			ViewSetup view_setup = {};
+			view_setup.fov = fov;
+			view_setup.origin = origin;
+			view_setup.angles = angles;
+			view_setup.zNear = zNear;
+			view_setup.zFar = zFar;
+			view_setup.m_flAspectRatio = m_flAspectRatio;
+			m_pMainView->GetRenderNew()->RenderView( view_setup );
+		}
+
 		DrawOpaqueRenderables( DepthMode );
 
 #ifdef TF_CLIENT_DLL

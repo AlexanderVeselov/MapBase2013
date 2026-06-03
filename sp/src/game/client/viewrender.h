@@ -416,6 +416,7 @@ public:
 	virtual void		  SetCurrentlyDrawingEntity( C_BaseEntity *pEnt );
 
 	virtual bool		UpdateShadowDepthTexture( ITexture *pRenderTarget, ITexture *pDepthTexture, const CViewSetup &shadowView );
+	RenderNew *		GetRenderNew() const { return m_RenderNew; }
 
 	int GetBaseDrawFlags() { return m_BaseDrawFlags; }
 	virtual bool ShouldForceNoVis()  { return m_bForceNoVis; }

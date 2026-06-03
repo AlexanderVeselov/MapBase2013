@@ -153,6 +153,7 @@ void RenderImpl::RenderView(ViewSetup const& view_setup)
 
     VMatrix view_matrix, projection_matrix, view_projection_matrix;
     ComputeViewMatrices(view_setup, &view_matrix, &projection_matrix, &view_projection_matrix);
+    MatrixTranspose(view_projection_matrix, view_projection_matrix);
 
     void* mapped_data = view_proj_buffer_->Map();
     std::memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));

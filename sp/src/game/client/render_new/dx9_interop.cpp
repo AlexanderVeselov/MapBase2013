@@ -224,6 +224,21 @@ void WriteDepthFromSharedTexture(IDirect3DTexture9* depthTex)
     // Set depth/stencil
     CheckResult(g_d3d9_device->SetDepthStencilSurface(depthSurf));
 
+    D3DSURFACE_DESC depth_desc = {};
+    CheckResult(depthSurf->GetDesc(&depth_desc));
+
+    D3DVIEWPORT9 viewport = {};
+    viewport.X = 0;
+    viewport.Y = 0;
+    viewport.Width = depth_desc.Width;
+    viewport.Height = depth_desc.Height;
+    viewport.MinZ = 0.0f;
+    viewport.MaxZ = 1.0f;
+    CheckResult(g_d3d9_device->SetViewport(&viewport));
+
+    RECT scissor_rect = {0, 0, static_cast<LONG>(depth_desc.Width), static_cast<LONG>(depth_desc.Height)};
+    CheckResult(g_d3d9_device->SetScissorRect(&scissor_rect));
+
     // Fullscreen quad
     QuadV v[6] =
     {
