@@ -9,6 +9,9 @@ set(CLIENT_HL2_RENDER_NEW_FACADE_SOURCES
 set(CLIENT_HL2_RENDER_NEW_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/render_new/bsp_loader.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/dx9_interop.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/gpu_scene_resources.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/render_backend.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/scene_builder.cpp"
 )
 
 set(CLIENT_HL2_REPLAY_SOURCES

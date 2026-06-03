@@ -38,6 +38,13 @@ struct StaticPropInstance
     int skin = 0;
 };
 
+struct BrushSubmodel
+{
+    int submodel_index = 0;
+    uint32_t first_vertex = 0;
+    uint32_t vertex_count = 0;
+};
+
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
-    BspLightmapAtlas& out_lightmap_atlas);
+    BspLightmapAtlas& out_lightmap_atlas, std::vector<BrushSubmodel>& out_brush_submodels);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);

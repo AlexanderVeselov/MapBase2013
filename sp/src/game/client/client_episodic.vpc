@@ -132,6 +132,13 @@ $Project "Client (Episodic)"
 		{
 			$File "render_new\render_new.cpp"
 			$File "render_new\render_new.h"
+			$File "render_new\gpu_scene_resources.cpp"
+			$File "render_new\gpu_scene_resources.h"
+			$File "render_new\render_backend.cpp"
+			$File "render_new\render_backend.h"
+			$File "render_new\render_scene.h"
+			$File "render_new\scene_builder.cpp"
+			$File "render_new\scene_builder.h"
 		}
 	}
 	

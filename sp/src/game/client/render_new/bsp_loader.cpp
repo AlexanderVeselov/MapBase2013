@@ -189,9 +189,10 @@ void BilerpUV(float const uv00[2], float const uv01[2], float const uv10[2], flo
 }
 
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
-    BspLightmapAtlas& out_lightmap_atlas)
+    BspLightmapAtlas& out_lightmap_atlas, std::vector<BrushSubmodel>& out_brush_submodels)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
+    out_brush_submodels.clear();
 
     out_lightmap_atlas.width = 1;
     out_lightmap_atlas.height = 1;
@@ -217,6 +218,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     std::vector<dedge_t>   edges;
     std::vector<int32_t>   surfedges;
     std::vector<dface_t>   faces;
+    std::vector<dmodel_t>  models;
     std::vector<texinfo_t> texinfo;
     std::vector<dtexdata_t> texdata;
     std::vector<ddispinfo_t> dispinfo;
@@ -230,6 +232,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     if (!ReadLump(f, hdr.lumps[LUMP_EDGES], edges))         return;
     if (!ReadLump(f, hdr.lumps[LUMP_SURFEDGES], surfedges)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_FACES], faces))         return;
+    if (!ReadLump(f, hdr.lumps[LUMP_MODELS], models))       return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXINFO], texinfo))     return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA], texdata))     return;
     if (!ReadLump(f, hdr.lumps[LUMP_DISPINFO], dispinfo))   return;
@@ -342,27 +345,27 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         return texture_index;
     };
 
-    for (int fi = 0; fi < (int)faces.size(); ++fi)
+    auto append_face = [&](int fi)
     {
         const dface_t& face = faces[fi];
 
-        if (face.numedges < 3) continue;
+        if (face.numedges < 3) return;
 
         if (face.texinfo < 0 || face.texinfo >= (int)texinfo.size())
-            continue;
+            return;
 
         const texinfo_t& tex = texinfo[face.texinfo];
         if (tex.texdata < 0 || tex.texdata >= static_cast<int>(texdata.size()))
-            continue;
+            return;
 
         dtexdata_t const& face_texdata = texdata[tex.texdata];
         char const* material_name_ptr =
             GetTexdataString(texdata_string_table, texdata_string_data, face_texdata.nameStringTableID);
         if (!material_name_ptr || material_name_ptr[0] == '\0')
-            continue;
+            return;
 
         if (tex.flags & (SURF_SKY | SURF_NODRAW | SURF_HINT | SURF_SKIP | SURF_TRIGGER))
-            continue;
+            return;
 
         std::string material_name = material_name_ptr;
         uint32_t texture_index = get_texture_index(material_name, face_texdata);
@@ -374,7 +377,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         {
             if (face.dispinfo < 0 || face.dispinfo >= static_cast<int>(dispinfo.size()))
             {
-                continue;
+                return;
             }
 
             ddispinfo_t const& face_dispinfo = dispinfo[face.dispinfo];
@@ -383,18 +386,18 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             int disp_vertex_count = row_vertex_count * row_vertex_count;
             if (face_dispinfo.power < MIN_MAP_DISP_POWER || face_dispinfo.power > MAX_MAP_DISP_POWER)
             {
-                continue;
+                return;
             }
 
             if (face_dispinfo.m_iDispVertStart < 0 || face_dispinfo.m_iDispVertStart + disp_vertex_count > static_cast<int>(dispverts.size()))
             {
-                continue;
+                return;
             }
 
             Vector face_points[4];
             if (!GetFaceQuadPoints(face, surfedges, edges, vertexes, face_points))
             {
-                continue;
+                return;
             }
 
             int start_corner = FindNearestQuadCorner(face_dispinfo.startPosition, face_points);
@@ -483,7 +486,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             Vector base_surface_normal = (disp_points[1] - disp_points[0]).Cross(disp_points[2] - disp_points[0]);
             if (base_surface_normal.Dot(base_surface_normal) <= 0.0f)
             {
-                continue;
+                return;
             }
 
             auto add_disp_triangle = [&](int a, int b, int c, int disp_triangle_index)
@@ -553,14 +556,14 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
                     {vertex2.lightmap_uv[0], vertex2.lightmap_uv[1]}, texture_index});
             }
 
-            continue;
+            return;
         }
 
         const int first = face.firstedge;
         const int count = face.numedges;
 
         if (first < 0 || first + count >(int)surfedges.size())
-            continue;
+            return;
 
         int32_t first_surfedge = surfedges[first];
         uint16_t first_index = edges[abs(first_surfedge)].v[(first_surfedge < 0)];
@@ -625,6 +628,40 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             out_vertices.push_back({v1, normal, {uv1[0], uv1[1]}, {lightmap_uv1[0], lightmap_uv1[1]}, texture_index});
             out_vertices.push_back({v2, normal, {uv2[0], uv2[1]}, {lightmap_uv2[0], lightmap_uv2[1]}, texture_index});
         }
+    };
+
+    if (models.empty())
+    {
+        return;
+    }
+
+    auto append_model_faces = [&](dmodel_t const& model)
+    {
+        if (model.firstface < 0 || model.numfaces < 0 || model.firstface + model.numfaces > static_cast<int>(faces.size()))
+        {
+            return;
+        }
+
+        for (int face_offset = 0; face_offset < model.numfaces; ++face_offset)
+        {
+            append_face(model.firstface + face_offset);
+        }
+    };
+
+    append_model_faces(models[0]);
+
+    out_brush_submodels.reserve(models.size() > 0 ? models.size() - 1 : 0);
+    for (int submodel_index = 1; submodel_index < static_cast<int>(models.size()); ++submodel_index)
+    {
+        uint32_t first_vertex = static_cast<uint32_t>(out_vertices.size());
+        append_model_faces(models[submodel_index]);
+        uint32_t vertex_count = static_cast<uint32_t>(out_vertices.size()) - first_vertex;
+        if (vertex_count == 0)
+        {
+            continue;
+        }
+
+        out_brush_submodels.push_back({submodel_index, first_vertex, vertex_count});
     }
 }
 
