@@ -112,6 +112,79 @@ char const* GetTexdataString(std::vector<int32_t> const& string_table, std::vect
     return string_data.data() + string_offset;
 }
 
+bool GetFaceQuadPoints(dface_t const& face, std::vector<int32_t> const& surfedges, std::vector<dedge_t> const& edges,
+    std::vector<dvertex_t> const& vertexes, Vector out_points[4])
+{
+    if (face.numedges != 4)
+    {
+        return false;
+    }
+
+    if (face.firstedge < 0 || face.firstedge + face.numedges > static_cast<int>(surfedges.size()))
+    {
+        return false;
+    }
+
+    for (int point_index = 0; point_index < 4; ++point_index)
+    {
+        int32_t surfedge = surfedges[face.firstedge + point_index];
+        int edge_index = std::abs(surfedge);
+        if (edge_index < 0 || edge_index >= static_cast<int>(edges.size()))
+        {
+            return false;
+        }
+
+        int vertex_slot = surfedge < 0 ? 1 : 0;
+        uint16_t vertex_index = edges[edge_index].v[vertex_slot];
+        if (vertex_index >= vertexes.size())
+        {
+            return false;
+        }
+
+        out_points[point_index] = vertexes[vertex_index].point;
+    }
+
+    return true;
+}
+
+int FindNearestQuadCorner(Vector const& start_position, Vector const points[4])
+{
+    int best_index = 0;
+    float best_distance_sq = FLT_MAX;
+    for (int point_index = 0; point_index < 4; ++point_index)
+    {
+        Vector delta = points[point_index] - start_position;
+        float distance_sq = delta.Dot(delta);
+        if (distance_sq < best_distance_sq)
+        {
+            best_distance_sq = distance_sq;
+            best_index = point_index;
+        }
+    }
+
+    return best_index;
+}
+
+Vector BilerpVector(Vector const& p00, Vector const& p01, Vector const& p10, Vector const& p11, float s, float t)
+{
+    return p00 * ((1.0f - s) * (1.0f - t))
+        + p01 * ((1.0f - s) * t)
+        + p10 * (s * (1.0f - t))
+        + p11 * (s * t);
+}
+
+void BilerpUV(float const uv00[2], float const uv01[2], float const uv10[2], float const uv11[2], float s, float t, float out_uv[2])
+{
+    out_uv[0] = uv00[0] * ((1.0f - s) * (1.0f - t))
+        + uv01[0] * ((1.0f - s) * t)
+        + uv10[0] * (s * (1.0f - t))
+        + uv11[0] * (s * t);
+    out_uv[1] = uv00[1] * ((1.0f - s) * (1.0f - t))
+        + uv01[1] * ((1.0f - s) * t)
+        + uv10[1] * (s * (1.0f - t))
+        + uv11[1] * (s * t);
+}
+
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
     BspLightmapAtlas& out_lightmap_atlas)
 {
@@ -143,6 +216,9 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     std::vector<dface_t>   faces;
     std::vector<texinfo_t> texinfo;
     std::vector<dtexdata_t> texdata;
+    std::vector<ddispinfo_t> dispinfo;
+    std::vector<CDispVert> dispverts;
+    std::vector<CDispTri> disptris;
     std::vector<ColorRGBExp32> lighting;
     std::vector<int32_t> texdata_string_table;
     std::vector<char> texdata_string_data;
@@ -153,6 +229,9 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     if (!ReadLump(f, hdr.lumps[LUMP_FACES], faces))         return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXINFO], texinfo))     return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA], texdata))     return;
+    if (!ReadLump(f, hdr.lumps[LUMP_DISPINFO], dispinfo))   return;
+    if (!ReadLump(f, hdr.lumps[LUMP_DISP_VERTS], dispverts)) return;
+    if (!ReadLump(f, hdr.lumps[LUMP_DISP_TRIS], disptris))  return;
     if (!ReadLump(f, hdr.lumps[LUMP_LIGHTING], lighting))   return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_TABLE], texdata_string_table)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_DATA], texdata_string_data)) return;
@@ -242,12 +321,29 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     out_lightmap_atlas.height = atlas_height;
     out_lightmap_atlas.rgba_pixels = std::move(atlas_pixels);
 
+    auto get_texture_index = [&](std::string const& material_name, dtexdata_t const& face_texdata)
+    {
+        uint32_t texture_index = 0u;
+        auto [it, inserted] = material_indices.emplace(material_name, 0u);
+        if (inserted)
+        {
+            out_materials.push_back(BspMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
+            texture_index = static_cast<uint32_t>(out_materials.size());
+            it->second = texture_index;
+        }
+        else
+        {
+            texture_index = it->second;
+        }
+
+        return texture_index;
+    };
+
     for (int fi = 0; fi < (int)faces.size(); ++fi)
     {
         const dface_t& face = faces[fi];
 
         if (face.numedges < 3) continue;
-        if (face.dispinfo != -1) continue;
 
         if (face.texinfo < 0 || face.texinfo >= (int)texinfo.size())
             continue;
@@ -266,21 +362,196 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             continue;
 
         std::string material_name = material_name_ptr;
-        uint32_t texture_index = 0;
-        auto [it, inserted] = material_indices.emplace(material_name, 0);
-        if (inserted)
-        {
-            out_materials.push_back(BspMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
-            texture_index = static_cast<uint32_t>(out_materials.size());
-            it->second = texture_index;
-        }
-        else
-        {
-            texture_index = it->second;
-        }
+        uint32_t texture_index = get_texture_index(material_name, face_texdata);
 
         float uv_scale_u = face_texdata.view_width > 0 ? 1.0f / static_cast<float>(face_texdata.view_width) : 1.0f;
         float uv_scale_v = face_texdata.view_height > 0 ? 1.0f / static_cast<float>(face_texdata.view_height) : 1.0f;
+
+        if (face.dispinfo != -1)
+        {
+            if (face.dispinfo < 0 || face.dispinfo >= static_cast<int>(dispinfo.size()))
+            {
+                continue;
+            }
+
+            ddispinfo_t const& face_dispinfo = dispinfo[face.dispinfo];
+            int subdivision_count = 1 << face_dispinfo.power;
+            int row_vertex_count = subdivision_count + 1;
+            int disp_vertex_count = row_vertex_count * row_vertex_count;
+            if (face_dispinfo.power < MIN_MAP_DISP_POWER || face_dispinfo.power > MAX_MAP_DISP_POWER)
+            {
+                continue;
+            }
+
+            if (face_dispinfo.m_iDispVertStart < 0 || face_dispinfo.m_iDispVertStart + disp_vertex_count > static_cast<int>(dispverts.size()))
+            {
+                continue;
+            }
+
+            Vector face_points[4];
+            if (!GetFaceQuadPoints(face, surfedges, edges, vertexes, face_points))
+            {
+                continue;
+            }
+
+            int start_corner = FindNearestQuadCorner(face_dispinfo.startPosition, face_points);
+            Vector disp_points[4] = {
+                face_points[start_corner],
+                face_points[(start_corner + 1) % 4],
+                face_points[(start_corner + 3) % 4],
+                face_points[(start_corner + 2) % 4],
+            };
+
+            float disp_uv_corners[4][2];
+            for (int point_index = 0; point_index < 4; ++point_index)
+            {
+                CalcUV(disp_points[point_index], tex, disp_uv_corners[point_index]);
+                disp_uv_corners[point_index][0] *= uv_scale_u;
+                disp_uv_corners[point_index][1] *= uv_scale_v;
+            }
+
+            PackedLightmapRect const& packed_rect = face_lightmap_rects[fi];
+            int lightmap_width = face.m_LightmapTextureSizeInLuxels[0] + 1;
+            int lightmap_height = face.m_LightmapTextureSizeInLuxels[1] + 1;
+
+            struct DispVertexData
+            {
+                Vector position;
+                Vector normal;
+                float uv[2];
+                float lightmap_uv[2];
+            };
+            struct DispTriangle
+            {
+                int a;
+                int b;
+                int c;
+            };
+
+            std::vector<DispVertexData> disp_vertex_data(disp_vertex_count);
+            std::vector<DispTriangle> disp_triangles;
+            disp_triangles.reserve(subdivision_count * subdivision_count * 2);
+
+            auto grid_index = [row_vertex_count](int x, int y)
+            {
+                return y * row_vertex_count + x;
+            };
+
+            auto normalize_lightmap_uv = [&](float const* face_lightmap_uv, float* out_lightmap_uv)
+            {
+                out_lightmap_uv[0] = 0.5f / static_cast<float>(out_lightmap_atlas.width);
+                out_lightmap_uv[1] = 0.5f / static_cast<float>(out_lightmap_atlas.height);
+                if (!packed_rect.valid)
+                {
+                    return;
+                }
+
+                float s = std::clamp(face_lightmap_uv[0], 0.0f, static_cast<float>(lightmap_width - 1));
+                float t = std::clamp(face_lightmap_uv[1], 0.0f, static_cast<float>(lightmap_height - 1));
+                out_lightmap_uv[0] = (static_cast<float>(packed_rect.x + 1) + s + 0.5f) / static_cast<float>(out_lightmap_atlas.width);
+                out_lightmap_uv[1] = (static_cast<float>(packed_rect.y + 1) + t + 0.5f) / static_cast<float>(out_lightmap_atlas.height);
+            };
+
+            for (int y = 0; y < row_vertex_count; ++y)
+            {
+                float t = subdivision_count > 0 ? static_cast<float>(y) / static_cast<float>(subdivision_count) : 0.0f;
+                for (int x = 0; x < row_vertex_count; ++x)
+                {
+                    float s = subdivision_count > 0 ? static_cast<float>(x) / static_cast<float>(subdivision_count) : 0.0f;
+                    int current_index = grid_index(x, y);
+                    int disp_vertex_index = face_dispinfo.m_iDispVertStart + current_index;
+
+                    Vector base_position = BilerpVector(disp_points[0], disp_points[1], disp_points[2], disp_points[3], s, t);
+                    CDispVert const& disp_vertex = dispverts[disp_vertex_index];
+                    disp_vertex_data[current_index].position = base_position + disp_vertex.m_vVector * disp_vertex.m_flDist;
+
+                    BilerpUV(disp_uv_corners[0], disp_uv_corners[1], disp_uv_corners[2], disp_uv_corners[3], s, t,
+                        disp_vertex_data[current_index].uv);
+
+                    float face_lightmap_uv[2] = {
+                        s * static_cast<float>(lightmap_width - 1),
+                        t * static_cast<float>(lightmap_height - 1),
+                    };
+                    normalize_lightmap_uv(face_lightmap_uv, disp_vertex_data[current_index].lightmap_uv);
+                    disp_vertex_data[current_index].normal = Vector(0.0f, 0.0f, 0.0f);
+                }
+            }
+
+            Vector base_surface_normal = (disp_points[1] - disp_points[0]).Cross(disp_points[2] - disp_points[0]);
+            if (base_surface_normal.Dot(base_surface_normal) <= 0.0f)
+            {
+                continue;
+            }
+
+            auto add_disp_triangle = [&](int a, int b, int c, int disp_triangle_index)
+            {
+                if (disp_triangle_index >= 0 && disp_triangle_index < static_cast<int>(disptris.size())
+                    && (disptris[disp_triangle_index].m_uiTags & DISPTRI_TAG_REMOVE) != 0)
+                {
+                    return;
+                }
+
+                Vector triangle_normal = (disp_vertex_data[b].position - disp_vertex_data[a].position)
+                    .Cross(disp_vertex_data[c].position - disp_vertex_data[a].position);
+                if (triangle_normal.Dot(base_surface_normal) < 0.0f)
+                {
+                    std::swap(b, c);
+                    triangle_normal = (disp_vertex_data[b].position - disp_vertex_data[a].position)
+                        .Cross(disp_vertex_data[c].position - disp_vertex_data[a].position);
+                }
+
+                if (triangle_normal.Dot(triangle_normal) <= 0.0f)
+                {
+                    return;
+                }
+
+                disp_vertex_data[a].normal += triangle_normal;
+                disp_vertex_data[b].normal += triangle_normal;
+                disp_vertex_data[c].normal += triangle_normal;
+                disp_triangles.push_back({a, b, c});
+            };
+
+            for (int y = 0; y < subdivision_count; ++y)
+            {
+                for (int x = 0; x < subdivision_count; ++x)
+                {
+                    int a = grid_index(x, y);
+                    int b = grid_index(x + 1, y);
+                    int c = grid_index(x, y + 1);
+                    int d = grid_index(x + 1, y + 1);
+                    int disp_triangle_start = face_dispinfo.m_iDispTriStart + ((y * subdivision_count + x) * 2);
+                    add_disp_triangle(a, b, d, disp_triangle_start);
+                    add_disp_triangle(a, d, c, disp_triangle_start + 1);
+                }
+            }
+
+            for (DispVertexData& vertex_data : disp_vertex_data)
+            {
+                if (vertex_data.normal.Dot(vertex_data.normal) > 0.0f)
+                {
+                    vertex_data.normal = vertex_data.normal.Normalized();
+                }
+                else
+                {
+                    vertex_data.normal = base_surface_normal.Normalized();
+                }
+            }
+
+            for (DispTriangle const& triangle : disp_triangles)
+            {
+                DispVertexData const& vertex0 = disp_vertex_data[triangle.a];
+                DispVertexData const& vertex1 = disp_vertex_data[triangle.b];
+                DispVertexData const& vertex2 = disp_vertex_data[triangle.c];
+                out_vertices.push_back({vertex0.position, vertex0.normal, {vertex0.uv[0], vertex0.uv[1]},
+                    {vertex0.lightmap_uv[0], vertex0.lightmap_uv[1]}, texture_index});
+                out_vertices.push_back({vertex1.position, vertex1.normal, {vertex1.uv[0], vertex1.uv[1]},
+                    {vertex1.lightmap_uv[0], vertex1.lightmap_uv[1]}, texture_index});
+                out_vertices.push_back({vertex2.position, vertex2.normal, {vertex2.uv[0], vertex2.uv[1]},
+                    {vertex2.lightmap_uv[0], vertex2.lightmap_uv[1]}, texture_index});
+            }
+
+            continue;
+        }
 
         const int first = face.firstedge;
         const int count = face.numedges;
