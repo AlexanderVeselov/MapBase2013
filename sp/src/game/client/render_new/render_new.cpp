@@ -69,6 +69,7 @@ private:
     gpu::DescriptorSetPtr pipeline_descriptor_set_;
     gpu::DescriptorSetPtr copy_depth_descriptor_set_;
     gpu::BufferPtr vertex_buffer_;
+    gpu::BufferPtr scene_transform_buffer_;
     gpu::BufferPtr view_proj_buffer_;
     gpu::SamplerPtr texture_sampler_;
     gpu::SamplerPtr lightmap_sampler_;
@@ -83,6 +84,11 @@ private:
 namespace
 {
 constexpr uint32_t kMaxMaterialTextures = 512;
+
+struct SceneTransform
+{
+    float m[4][4] = {};
+};
 
 std::string GetShaderDirectory()
 {
@@ -115,6 +121,65 @@ KeyValues* GetMaterialRoot(KeyValues& material_kv)
 std::array<uint8_t, 16> MakeFallbackTexturePixels()
 {
     return {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
+}
+
+SceneTransform MakeIdentitySceneTransform()
+{
+    SceneTransform transform = {};
+    transform.m[0][0] = 1.0f;
+    transform.m[1][1] = 1.0f;
+    transform.m[2][2] = 1.0f;
+    transform.m[3][3] = 1.0f;
+    return transform;
+}
+
+SceneTransform MakeSceneTransform(matrix3x4_t const& source_transform)
+{
+    SceneTransform transform = {};
+
+    transform.m[0][0] = source_transform[0][0];
+    transform.m[0][1] = source_transform[1][0];
+    transform.m[0][2] = source_transform[2][0];
+    transform.m[0][3] = 0.0f;
+
+    transform.m[1][0] = source_transform[0][1];
+    transform.m[1][1] = source_transform[1][1];
+    transform.m[1][2] = source_transform[2][1];
+    transform.m[1][3] = 0.0f;
+
+    transform.m[2][0] = source_transform[0][2];
+    transform.m[2][1] = source_transform[1][2];
+    transform.m[2][2] = source_transform[2][2];
+    transform.m[2][3] = 0.0f;
+
+    transform.m[3][0] = source_transform[0][3];
+    transform.m[3][1] = source_transform[1][3];
+    transform.m[3][2] = source_transform[2][3];
+    transform.m[3][3] = 1.0f;
+
+    return transform;
+}
+
+void ComputeStaticPropVertexColor(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world, float out_color[3])
+{
+    Vector world_position;
+    Vector world_normal;
+    VectorTransform(source_vertex.m_Position, model_to_world, world_position);
+    VectorRotate(source_vertex.m_Normal, model_to_world, world_normal);
+    if (world_normal.Dot(world_normal) > 0.0f)
+    {
+        world_normal.NormalizeInPlace();
+    }
+
+    Vector lighting(1.0f, 1.0f, 1.0f);
+    if (engine)
+    {
+        engine->ComputeLighting(world_position, &world_normal, true, lighting);
+    }
+
+    out_color[0] = lighting.x;
+    out_color[1] = lighting.y;
+    out_color[2] = lighting.z;
 }
 
 IMaterial* FindNamedMaterial(char const* material_name)
@@ -171,25 +236,17 @@ uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_i
     return texture_index;
 }
 
-Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world,
-    matrix3x4_t const pose_to_world[MAXSTUDIOBONES],
+Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, uint32_t transform_index,
+    matrix3x4_t const& model_to_world, matrix3x4_t const pose_to_world[MAXSTUDIOBONES],
     uint32_t texture_index, float fallback_lightmap_u, float fallback_lightmap_v)
 {
     (void)pose_to_world;
 
-    // GetTriangles already returns ready-to-rasterize triangle vertices for debug/perf tooling.
-    // Positions are still in model space for static props, so apply the prop instance transform once here.
-    Vector position;
-    Vector normal = source_vertex.m_Normal;
-    VectorTransform(source_vertex.m_Position, model_to_world, position);
-    VectorRotate(source_vertex.m_Normal, model_to_world, normal);
-    if (normal.Dot(normal) > 0.0f)
-    {
-        normal.NormalizeInPlace();
-    }
-
-    return Vertex{position, normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
+    Vertex vertex = {source_vertex.m_Position, source_vertex.m_Normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
         {fallback_lightmap_u, fallback_lightmap_v}, texture_index};
+    ComputeStaticPropVertexColor(source_vertex, model_to_world, vertex.color);
+    vertex.transform_index = transform_index;
+    return vertex;
 
 #if 0
     Vector position(0.0f, 0.0f, 0.0f);
@@ -238,7 +295,7 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x
 }
 
 void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
-    BspLightmapAtlas const& lightmap_atlas)
+    BspLightmapAtlas const& lightmap_atlas, std::vector<SceneTransform>& out_scene_transforms)
 {
     if (!modelinfo || !mdlcache || !g_pStudioRender)
     {
@@ -269,6 +326,8 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
     {
         matrix3x4_t model_to_world;
         AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
+        uint32_t transform_index = static_cast<uint32_t>(out_scene_transforms.size());
+        out_scene_transforms.push_back(MakeSceneTransform(model_to_world));
 
         MDLHandle_t mdl_handle = mdlcache->FindMDL(static_prop.model_name.c_str());
         if (mdl_handle == MDLHANDLE_INVALID)
@@ -327,7 +386,7 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
                     return;
                 }
 
-                out_vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], model_to_world,
+                out_vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], transform_index, model_to_world,
                     triangle_output.m_PoseToWorld,
                     texture_index, fallback_lightmap_u, fallback_lightmap_v));
             };
@@ -443,8 +502,16 @@ void RenderImpl::Init()
     fallback_lightmap_texture_ = CreateTextureImage(1, 1, fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
     lightmap_texture_ = fallback_lightmap_texture_;
 
+    SceneTransform identity_transform = MakeIdentitySceneTransform();
+    scene_transform_buffer_ = device_->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+    void* transform_data = scene_transform_buffer_->Map();
+    std::memcpy(transform_data, &identity_transform, sizeof(identity_transform));
+    scene_transform_buffer_->Unmap();
+
     pipeline_descriptor_set_ = pipeline_->CreateDescriptorSet();
     pipeline_descriptor_set_->BindBuffer(*view_proj_buffer_, 0);
+    pipeline_descriptor_set_->BindBuffer(*scene_transform_buffer_, 1);
     pipeline_descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     pipeline_descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
     pipeline_descriptor_set_->BindImage(*lightmap_texture_, 0, 3);
@@ -458,9 +525,11 @@ void RenderImpl::LoadLevel(char const* level_name)
 {
     std::vector<Vertex> cpu_vertices;
     std::vector<BspMaterial> bsp_materials;
+    std::vector<SceneTransform> scene_transforms;
+    scene_transforms.push_back(MakeIdentitySceneTransform());
     BspLightmapAtlas lightmap_atlas;
     LoadBsp(level_name, cpu_vertices, bsp_materials, lightmap_atlas);
-    AppendStaticPropTriangles(level_name, cpu_vertices, bsp_materials, lightmap_atlas);
+    AppendStaticPropTriangles(level_name, cpu_vertices, bsp_materials, lightmap_atlas, scene_transforms);
 
     if (!lightmap_atlas.rgba_pixels.empty() && lightmap_atlas.width > 0 && lightmap_atlas.height > 0)
     {
@@ -471,6 +540,12 @@ void RenderImpl::LoadLevel(char const* level_name)
     {
         lightmap_texture_ = fallback_lightmap_texture_;
     }
+
+    scene_transform_buffer_ = device_->CreateBuffer(sizeof(SceneTransform) * scene_transforms.size(), sizeof(SceneTransform),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+    void* transform_data = scene_transform_buffer_->Map();
+    std::memcpy(transform_data, scene_transforms.data(), sizeof(SceneTransform) * scene_transforms.size());
+    scene_transform_buffer_->Unmap();
 
     RebuildMaterialBindings(bsp_materials, cpu_vertices);
 
@@ -712,6 +787,7 @@ void RenderImpl::RebuildMaterialBindings(std::vector<BspMaterial> const& bsp_mat
 
     pipeline_descriptor_set_->Clear();
     pipeline_descriptor_set_->BindBuffer(*view_proj_buffer_, 0);
+    pipeline_descriptor_set_->BindBuffer(*scene_transform_buffer_, 1);
     pipeline_descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     pipeline_descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     pipeline_descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);

@@ -12,6 +12,8 @@ struct Vertex
     float uv[2];
     float lightmap_uv[2];
     uint32_t texture_index;
+    float color[3] = {1.0f, 1.0f, 1.0f};
+    uint32_t transform_index = 0;
 };
 
 struct BspMaterial
