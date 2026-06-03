@@ -1,0 +1,3 @@
+[submodule "sp/src/thirdparty/GpuApi"]
+	path = sp/src/thirdparty/GpuApi
+	url = https://github.com/AlexanderVeselov/GpuApi

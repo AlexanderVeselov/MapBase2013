@@ -41,6 +41,12 @@ if(SOURCE_SDK_BUILD_SHADERS)
     add_subdirectory(materialsystem/stdshaders)
 endif()
 
+if(SOURCE_SDK_BUILD_GAME AND SOURCE_SDK_RENDER_NEW)
+    set(GPU_API_BUILD_VULKAN OFF CACHE BOOL "" FORCE)
+    set(GPU_API_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(thirdparty/GpuApi)
+endif()
+
 if(SOURCE_SDK_BUILD_GAME)
     add_subdirectory(game/server)
     add_subdirectory(game/client)

@@ -148,10 +148,33 @@ endif()
 
 if(SOURCE_SDK_RENDER_NEW)
     target_compile_definitions(client PRIVATE SOURCE_SDK_RENDER_NEW)
+    target_include_directories(client PRIVATE
+        "${SOURCE_SDK_ROOT}/thirdparty/GpuApi/src/d3d12"
+    )
     target_link_libraries(client PRIVATE
+        GpuApi
+        d3d11.lib
         d3d11.lib
         d3d12.lib
         dxgi.lib
         d3dcompiler.lib
     )
+
+    set(gpu_api_dxc_bin_dir "${SOURCE_SDK_ROOT}/thirdparty/GpuApi/third_party/dxc_2022_12_16/bin/x86")
+
+    add_custom_command(TARGET client POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${gpu_api_dxc_bin_dir}/dxcompiler.dll" "$<TARGET_FILE_DIR:client>/dxcompiler.dll"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${gpu_api_dxc_bin_dir}/dxil.dll" "$<TARGET_FILE_DIR:client>/dxil.dll"
+        COMMENT "Copying GpuApi DXC runtime next to client.dll"
+        VERBATIM
+    )
+
+    if(SOURCE_SDK_COPY_GAME_DLLS)
+        add_custom_command(TARGET client POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${gpu_api_dxc_bin_dir}/dxcompiler.dll" "${SOURCE_SDK_GAME_DLL_OUTPUT_DIR}/dxcompiler.dll"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${gpu_api_dxc_bin_dir}/dxil.dll" "${SOURCE_SDK_GAME_DLL_OUTPUT_DIR}/dxil.dll"
+            COMMENT "Copying GpuApi DXC runtime to ${SOURCE_SDK_GAME_DLL_OUTPUT_DIR}"
+            VERBATIM
+        )
+    endif()
 endif()

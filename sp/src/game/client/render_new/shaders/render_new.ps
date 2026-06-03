@@ -1,0 +1,14 @@
+struct PSInput
+{
+    float4 position : SV_POSITION;
+    float3 color : COLOR0;
+    float2 texcoord : TEXCOORD0;
+};
+
+float4 main(PSInput input) : SV_TARGET
+{
+    float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
+    float3 normal = normalize(input.color);
+    float diffuse = saturate(dot(normal, light));
+    return float4(diffuse, diffuse, diffuse, 1.0);
+}

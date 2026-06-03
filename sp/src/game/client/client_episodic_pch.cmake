@@ -1,13 +1,5 @@
 set(CLIENT_EPISODIC_NO_PCH_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/render_new/bsp_loader.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d11_rhi.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_buffer.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_command_buffer.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_compute_pipeline.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_descriptor_manager.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_graphics_pipelilne.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_texture.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/d3d12_rhi/d3d12_rhi.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/dx9_interop.cpp"
     "${SOURCE_SDK_ROOT}/public/bone_setup.cpp"
     "${SOURCE_SDK_ROOT}/public/client_class.cpp"

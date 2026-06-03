@@ -1,8 +1,23 @@
 #include "render_new.h"
+
+#ifdef SOURCE_SDK_RENDER_NEW
+
 #include "dx9_interop.h"
-#include "rhi.h"
 #include "mathlib/vmatrix.h"
 #include "bsp_loader.h"
+
+#include "gpu_api.hpp"
+#include "gpu_buffer.hpp"
+#include "gpu_command_buffer.hpp"
+#include "gpu_descriptor_set.hpp"
+#include "gpu_device.hpp"
+#include "gpu_image.hpp"
+#include "gpu_pipeline.hpp"
+#include "gpu_queue.hpp"
+
+#include <cstring>
+#include <string>
+#include <unordered_map>
 
 class RenderImpl : public RenderNew
 {
@@ -12,15 +27,43 @@ public:
     void RenderView(ViewSetup const& view_setup) override;
 
 private:
-    std::unique_ptr<rhi::RHI> rhi_;
-    std::shared_ptr<rhi::Texture> color_texture_;
-    std::shared_ptr<rhi::Texture> depth_texture_;
-    std::shared_ptr<rhi::Texture> shared_depth_texture_;
-    std::shared_ptr<rhi::GraphicsPipeline> pipeline_;
-    std::shared_ptr<rhi::ComputePipeline> copy_depth_pipeline_;
-    std::shared_ptr<rhi::Buffer> vertex_buffer_;
-    std::shared_ptr<rhi::Buffer> view_proj_buffer_;
+    void EnsureCommandBuffer();
+    void TransitionImage(gpu::ImagePtr const& image, gpu::ImageLayout desired_layout);
+    void SubmitAndWait();
+
+private:
+    std::unique_ptr<gpu::Api> api_;
+    gpu::DevicePtr device_;
+    gpu::Queue* graphics_queue_ = nullptr;
+    gpu::CommandBufferPtr cmd_buffer_;
+    std::unordered_map<gpu::Image*, gpu::ImageLayout> image_layouts_;
+    gpu::ImagePtr color_texture_;
+    gpu::ImagePtr depth_texture_;
+    gpu::ImagePtr shared_depth_texture_;
+    gpu::GraphicsPipelinePtr pipeline_;
+    gpu::ComputePipelinePtr copy_depth_pipeline_;
+    gpu::DescriptorSetPtr pipeline_descriptor_set_;
+    gpu::DescriptorSetPtr copy_depth_descriptor_set_;
+    gpu::BufferPtr vertex_buffer_;
+    gpu::BufferPtr view_proj_buffer_;
+    uint32_t vertex_count_ = 0;
+    std::string shader_dir_;
 };
+
+namespace
+{
+std::string GetShaderDirectory()
+{
+    std::string file_path = __FILE__;
+    size_t last_separator = file_path.find_last_of("\\/");
+    if (last_separator == std::string::npos)
+    {
+        return "shaders";
+    }
+
+    return file_path.substr(0, last_separator) + "\\shaders";
+}
+}
 
 void ComputeViewMatrix(VMatrix* pViewMatrix, const Vector& origin, const QAngle& angles)
 {
@@ -54,138 +97,120 @@ void ComputeViewMatrices(ViewSetup const& view_setup, VMatrix* pWorldToView, VMa
 void RenderImpl::Init()
 {
     DX9_InitD3D9Interop();
-    uint32_t adapter_idx = GetD3D9AdapterIndex();
-    rhi_.reset(rhi::CreateRHI(adapter_idx));
+    api_.reset(gpu::Api::Create(gpu::ApiType::kD3D12));
 
-    InitSharedTextures(rhi_.get(), color_texture_, shared_depth_texture_);
-    depth_texture_ = rhi_->CreateTexture(color_texture_->GetWidth(), color_texture_->GetHeight(),
-        rhi::ImageFormat::kR32_Typeless, 1u,
-        rhi::TextureBindFlags::kShaderResource | rhi::TextureBindFlags::kDepthStencil);
+    shader_dir_ = GetShaderDirectory();
+    api_->SetShaderPath(shader_dir_.c_str());
 
-    char const* vertex_shader_src = R"(
-        cbuffer CameraCB : register(b0)
-        {
-            float4x4 g_view_projection;
-        };
+    device_ = CreateD3D12DeviceForD3D9Adapter(*api_);
+    graphics_queue_ = &device_->GetQueue(gpu::QueueType::kGraphics);
 
-        struct VSInput
-        {
-            float3 position : POSITION;
-            float3 color    : COLOR0;
-            float2 texcoord : TEXCOORD0;
-        };
-        struct VSOutput
-        {
-            float4 position : SV_POSITION;
-            float3 color : COLOR0;
-            float2 texcoord : TEXCOORD0;
-        };
-        VSOutput main(VSInput input)
-        {
-            VSOutput output;
-            output.position = mul(float4(input.position, 1.0), g_view_projection);
-            output.color = input.color;
-            output.texcoord = input.texcoord;
-            return output;
-        }
-    )";
+    InitSharedTextures(*device_, color_texture_, shared_depth_texture_);
+    depth_texture_ = device_->CreateImage(color_texture_->GetWidth(), color_texture_->GetHeight(),
+        gpu::ImageFormat::kR32_Typeless, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kDepthStencil);
 
-    char const* pixel_shader_src = R"(
-        struct PSInput
-        {
-            float4 position : SV_POSITION;
-            float3 color : COLOR0;
-            float2 texcoord : TEXCOORD0;
-        };
+    gpu::GraphicsPipelineDesc pipeline_desc;
+    pipeline_desc.vs_filename = "render_new.vs";
+    pipeline_desc.ps_filename = "render_new.ps";
+    pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm};
+    pipeline_desc.depth_enabled = true;
+    pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
+    pipeline_ = device_->CreateGraphicsPipeline(pipeline_desc);
+    copy_depth_pipeline_ = device_->CreateComputePipeline("copy_depth.cs");
 
-        float4 main(PSInput input) : SV_TARGET
-        {
-            //return float4(frac(input.texcoord / 512.0f), 0.0f, 1.0f);
+    view_proj_buffer_ = device_->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
 
-            float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
-            float3 normal = normalize(input.color);
-            float diffuse = saturate(dot(normal, light));
-            return float4(diffuse, diffuse, diffuse, 1.0);
-        }
-    )";
+    pipeline_descriptor_set_ = pipeline_->CreateDescriptorSet();
+    pipeline_descriptor_set_->BindBuffer(*view_proj_buffer_, 0);
 
-    pipeline_ = rhi_->CreateGraphicsPipeline(vertex_shader_src, pixel_shader_src);
-
-    char const* copy_shader_src = R"(
-        Texture2D g_input_tex : register(t0);
-        RWTexture2D<float4> g_output_tex : register(u0);
-
-        // https://aras-p.info/blog/2009/07/30/encoding-floats-to-rgba-the-final
-        float4 EncodeFloatRGBA(float v)
-        {
-            // Fix corner case when all frac() return zero
-            if (v == 1.0f) return float4(1.0f, 0.0f, 0.0f, 0.0f);
-            float4 enc = float4(1.0, 255.0, 65025.0, 16581375.0) * v;
-            enc = frac(enc);
-            enc -= enc.yzww * float4(1.0/255.0,1.0/255.0,1.0/255.0,0.0);
-            return enc;
-        }
-
-        [numthreads(16, 16, 1)]
-        void main(uint3 DTid : SV_DispatchThreadID)
-        {
-            uint2 tex_size;
-            g_output_tex.GetDimensions(tex_size.x, tex_size.y);
-            if (any(DTid.xy >= tex_size))
-                return;
-            float depth = g_input_tex.Load(int3(DTid.xy, 0)).r;
-            g_output_tex[DTid.xy] = EncodeFloatRGBA(depth);
-        }
-    )";
-
-    copy_depth_pipeline_ = rhi_->CreateComputePipeline(copy_shader_src);
-    copy_depth_pipeline_->BindShaderResource(depth_texture_, 0);
-    copy_depth_pipeline_->BindStorageResource(shared_depth_texture_, 0);
-
-    view_proj_buffer_ = rhi_->CreateBuffer(sizeof(VMatrix), rhi::BufferUsage::kDynamic,
-        rhi::BufferBindFlags::kConstantBuffer);
-
-    pipeline_->BindConstantBuffer(view_proj_buffer_, 0);
+    copy_depth_descriptor_set_ = copy_depth_pipeline_->CreateDescriptorSet();
+    copy_depth_descriptor_set_->BindImage(*depth_texture_, 0);
+    copy_depth_descriptor_set_->BindImage(*shared_depth_texture_, 1);
 }
 
 void RenderImpl::LoadLevel(char const* level_name)
 {
     std::vector<Vertex> cpu_vertices;
     LoadBsp(level_name, cpu_vertices);
-    vertex_buffer_ = rhi_->CreateBuffer(sizeof(Vertex) * cpu_vertices.size(), rhi::BufferUsage::kDefault,
-        rhi::BufferBindFlags::kVertexBuffer);
-    rhi_->UploadBuffer(vertex_buffer_, cpu_vertices.data(), sizeof(Vertex) * cpu_vertices.size());
+    vertex_count_ = static_cast<uint32_t>(cpu_vertices.size());
+    vertex_buffer_ = device_->CreateBuffer(sizeof(Vertex) * cpu_vertices.size(), sizeof(Vertex),
+        gpu::BufferFlags::kCpuAccess);
+
+    void* mapped_data = vertex_buffer_->Map();
+    std::memcpy(mapped_data, cpu_vertices.data(), sizeof(Vertex) * cpu_vertices.size());
+    vertex_buffer_->Unmap();
 }
 
 void RenderImpl::RenderView(ViewSetup const& view_setup)
 {
     uint32_t viewport_width = color_texture_->GetWidth();
     uint32_t viewport_height = color_texture_->GetHeight();
-    rhi_->SetViewport(0, 0, viewport_width, viewport_height);
+    EnsureCommandBuffer();
+    cmd_buffer_->SetViewport(gpu::Viewport{0.0f, 0.0f, static_cast<float>(viewport_width),
+        static_cast<float>(viewport_height), 0.0f, 1.0f});
+    cmd_buffer_->SetScissor(gpu::Rect{0, 0, static_cast<int32_t>(viewport_width), static_cast<int32_t>(viewport_height)});
 
     VMatrix view_matrix, projection_matrix, view_projection_matrix;
     ComputeViewMatrices(view_setup, &view_matrix, &projection_matrix, &view_projection_matrix);
 
-    void* mapped_data = rhi_->MapBuffer(view_proj_buffer_);
-    memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));
-    rhi_->UnmapBuffer(view_proj_buffer_);
+    void* mapped_data = view_proj_buffer_->Map();
+    std::memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));
+    view_proj_buffer_->Unmap();
 
-    rhi_->SetRenderTarget(color_texture_, depth_texture_);
+    TransitionImage(color_texture_, gpu::ImageLayout::kRenderTarget);
+    TransitionImage(depth_texture_, gpu::ImageLayout::kRenderTarget);
+    cmd_buffer_->SetRenderTarget(color_texture_, depth_texture_);
 
-    rhi_->ClearColorTexture(color_texture_, 0.0f, 0.5f, 0.5f, 1.0f);
-    rhi_->ClearDepthTexture(depth_texture_, 1.0f);
-    rhi_->BindGraphicsPipeline(pipeline_);
-    rhi_->BindVertexBuffer(vertex_buffer_, sizeof(Vertex));
-    rhi_->Draw(vertex_buffer_->GetSize() / sizeof(Vertex), 0);
+    cmd_buffer_->ClearImage(color_texture_, 0.0f, 0.5f, 0.5f, 1.0f);
+    cmd_buffer_->ClearDepthImage(depth_texture_, 1.0f);
+    cmd_buffer_->BindPipeline(pipeline_);
+    cmd_buffer_->BindDescriptorSet(pipeline_descriptor_set_);
+    cmd_buffer_->SetVertexBuffer(vertex_buffer_, sizeof(Vertex));
+    cmd_buffer_->Draw(vertex_count_);
 
-    rhi_->SetRenderTarget(nullptr, nullptr);
-    rhi_->BindComputePipeline(copy_depth_pipeline_);
-    rhi_->Dispatch((viewport_width + 15) / 16, (viewport_height + 15) / 16, 1);
+    TransitionImage(depth_texture_, gpu::ImageLayout::kShaderRead);
+    TransitionImage(shared_depth_texture_, gpu::ImageLayout::kShaderReadWrite);
+    cmd_buffer_->BindPipeline(copy_depth_pipeline_);
+    cmd_buffer_->BindDescriptorSet(copy_depth_descriptor_set_);
+    cmd_buffer_->Dispatch((viewport_width + 15) / 16, (viewport_height + 15) / 16, 1);
+    cmd_buffer_->StorageBarrier(shared_depth_texture_);
+
+    SubmitAndWait();
 
     DX9_RenderFrame();
+}
 
-    // Flushing is a must!
-    rhi_->Flush();
+void RenderImpl::EnsureCommandBuffer()
+{
+    if (!cmd_buffer_)
+    {
+        cmd_buffer_ = graphics_queue_->CreateCommandBuffer();
+    }
+}
+
+void RenderImpl::TransitionImage(gpu::ImagePtr const& image, gpu::ImageLayout desired_layout)
+{
+    gpu::ImageLayout& current_layout = image_layouts_[image.get()];
+    if (current_layout == desired_layout)
+    {
+        return;
+    }
+
+    EnsureCommandBuffer();
+    cmd_buffer_->TransitionBarrier(image, current_layout, desired_layout);
+    current_layout = desired_layout;
+}
+
+void RenderImpl::SubmitAndWait()
+{
+    if (!cmd_buffer_)
+    {
+        return;
+    }
+
+    graphics_queue_->Submit(std::move(cmd_buffer_));
+    graphics_queue_->WaitIdle();
 }
 
 RenderNew* GetRenderNewInstance()
@@ -193,3 +218,21 @@ RenderNew* GetRenderNewInstance()
     static RenderImpl instance;
     return &instance;
 }
+
+#else
+
+class RenderNull : public RenderNew
+{
+public:
+    void Init() override {}
+    void LoadLevel(char const* level_name) override {}
+    void RenderView(ViewSetup const& view_setup) override {}
+};
+
+RenderNew* GetRenderNewInstance()
+{
+    static RenderNull instance;
+    return &instance;
+}
+
+#endif

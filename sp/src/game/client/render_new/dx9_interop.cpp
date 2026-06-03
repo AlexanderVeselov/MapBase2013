@@ -1,11 +1,18 @@
 #include "dx9_interop.h"
-#include "rhi.h"
+
+#include "d3d12_api.hpp"
+#include "d3d12_device.hpp"
+#include "d3d12_image.hpp"
+#include "gpu_device.hpp"
+
 #include <d3d9.h>
 #include <d3d11.h>
-#include <cstdint>
-#include <cassert>
-#include <memory>
 #include <d3dcompiler.h>
+
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+
 #include <wrl/client.h>
 
 #define CheckResult(hr) if (FAILED(hr)) { assert(false); }
@@ -15,6 +22,7 @@ IDirect3DDevice9* g_d3d9_device = nullptr;
 IDirect3DSwapChain9* g_d3d9_swapchain = nullptr;
 IDirect3DTexture9* g_d3d9_shared_color = nullptr;
 IDirect3DTexture9* g_d3d9_shared_depth = nullptr;
+Microsoft::WRL::ComPtr<ID3D11Device> g_interop_device;
 
 namespace
 {
@@ -27,6 +35,81 @@ struct QuadV
     float x, y, z, w;  // clip space
     float u, v;
 };
+
+UINT ToD3D11BindFlags(gpu::ImageFlags flags)
+{
+    UINT bind_flags = 0;
+    if (gpu::HasFlag(flags, gpu::ImageFlags::kRenderTarget))
+    {
+        bind_flags |= D3D11_BIND_RENDER_TARGET;
+    }
+    if (gpu::HasFlag(flags, gpu::ImageFlags::kDepthStencil))
+    {
+        bind_flags |= D3D11_BIND_DEPTH_STENCIL;
+    }
+    if (gpu::HasFlag(flags, gpu::ImageFlags::kShaderResource))
+    {
+        bind_flags |= D3D11_BIND_SHADER_RESOURCE;
+    }
+    if (gpu::HasFlag(flags, gpu::ImageFlags::kStorage))
+    {
+        bind_flags |= D3D11_BIND_UNORDERED_ACCESS;
+    }
+    return bind_flags;
+}
+
+void EnsureInteropDevice(unsigned int adapter_index)
+{
+    if (g_interop_device)
+    {
+        return;
+    }
+
+    Microsoft::WRL::ComPtr<IDXGIFactory1> dxgi_factory;
+    CheckResult(CreateDXGIFactory1(IID_PPV_ARGS(&dxgi_factory)));
+
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> dxgi_adapter;
+    CheckResult(dxgi_factory->EnumAdapters1(adapter_index, &dxgi_adapter));
+
+    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
+    CheckResult(D3D11CreateDevice(dxgi_adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, &feature_level, 1,
+        D3D11_SDK_VERSION, &g_interop_device, nullptr, nullptr));
+}
+
+gpu::ImagePtr CreateSharedImage(gpu::Device& device, uint32_t width, uint32_t height, gpu::ImageFormat format,
+    gpu::ImageFlags flags, IDirect3DTexture9** d3d9_texture)
+{
+    auto* d3d12_device = static_cast<gpu::D3D12Device*>(&device);
+
+    D3D11_TEXTURE2D_DESC texture_desc = {};
+    texture_desc.Width = width;
+    texture_desc.Height = height;
+    texture_desc.MipLevels = 1;
+    texture_desc.ArraySize = 1;
+    texture_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    texture_desc.SampleDesc.Count = 1;
+    texture_desc.Usage = D3D11_USAGE_DEFAULT;
+    texture_desc.BindFlags = ToD3D11BindFlags(flags);
+    texture_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> interop_texture;
+    CheckResult(g_interop_device->CreateTexture2D(&texture_desc, nullptr, &interop_texture));
+
+    Microsoft::WRL::ComPtr<IDXGIResource> dxgi_resource;
+    CheckResult(interop_texture.As(&dxgi_resource));
+
+    HANDLE shared_handle = nullptr;
+    CheckResult(dxgi_resource->GetSharedHandle(&shared_handle));
+
+    CheckResult(g_d3d9_device->CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+        D3DPOOL_DEFAULT, d3d9_texture, &shared_handle));
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> d3d12_resource;
+    CheckResult(d3d12_device->GetD3D12Device()->OpenSharedHandle(shared_handle, IID_PPV_ARGS(&d3d12_resource)));
+
+    return std::make_shared<gpu::D3D12Image>(*d3d12_device, d3d12_resource.Get(), width, height, format, 1, 1,
+        flags);
+}
 
 void InitDepthWriteShaders()
 {
@@ -181,56 +264,26 @@ unsigned int GetD3D9AdapterIndex()
     return d3d9_creation_params.AdapterOrdinal;
 }
 
-void InitSharedTextures(rhi::RHI* rhi, std::shared_ptr<rhi::Texture>& color_tex,
-    std::shared_ptr<rhi::Texture>& depth_tex)
+gpu::DevicePtr CreateD3D12DeviceForD3D9Adapter(gpu::Api& api)
 {
-    IDirect3DSurface9* pBackBuffer = nullptr;
-    CheckResult(g_d3d9_swapchain->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &pBackBuffer));
+    return static_cast<gpu::D3D12Api&>(api).CreateDevice(GetD3D9AdapterIndex());
+}
 
-    D3DSURFACE_DESC backbuffer_desc;
-    pBackBuffer->GetDesc(&backbuffer_desc);
+void InitSharedTextures(gpu::Device& device, gpu::ImagePtr& color_tex, gpu::ImagePtr& depth_tex)
+{
+    EnsureInteropDevice(GetD3D9AdapterIndex());
 
-    color_tex = rhi->CreateTexture(
-        backbuffer_desc.Width,
-        backbuffer_desc.Height,
-        rhi::ImageFormat::kBGRA8_UNorm,
-        1,
-        rhi::TextureBindFlags::kRenderTarget,
-        D3D11_RESOURCE_MISC_SHARED
-    );
+    Microsoft::WRL::ComPtr<IDirect3DSurface9> backbuffer;
+    CheckResult(g_d3d9_swapchain->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &backbuffer));
 
-    HANDLE shared_color_handle = (HANDLE)color_tex->GetSharedHandle();
+    D3DSURFACE_DESC backbuffer_desc = {};
+    CheckResult(backbuffer->GetDesc(&backbuffer_desc));
 
-    CheckResult(g_d3d9_device->CreateTexture(
-        backbuffer_desc.Width, backbuffer_desc.Height,
-        1,
-        D3DUSAGE_RENDERTARGET,
-        D3DFMT_A8R8G8B8,
-        D3DPOOL_DEFAULT,
-        &g_d3d9_shared_color,
-        &shared_color_handle
-    ));
+    color_tex = CreateSharedImage(device, backbuffer_desc.Width, backbuffer_desc.Height, gpu::ImageFormat::kBGRA8_UNorm,
+        gpu::ImageFlags::kRenderTarget, &g_d3d9_shared_color);
 
-    depth_tex = rhi->CreateTexture(
-        backbuffer_desc.Width,
-        backbuffer_desc.Height,
-        rhi::ImageFormat::kBGRA8_UNorm,
-        1,
-        rhi::TextureBindFlags::kUnorderedAccess,
-        D3D11_RESOURCE_MISC_SHARED
-    );
-
-    HANDLE shared_depth_handle = (HANDLE)depth_tex->GetSharedHandle();
-
-    CheckResult(g_d3d9_device->CreateTexture(
-        backbuffer_desc.Width, backbuffer_desc.Height,
-        1,
-        D3DUSAGE_RENDERTARGET,
-        D3DFMT_A8R8G8B8,
-        D3DPOOL_DEFAULT,
-        &g_d3d9_shared_depth,
-        &shared_depth_handle
-    ));
+    depth_tex = CreateSharedImage(device, backbuffer_desc.Width, backbuffer_desc.Height, gpu::ImageFormat::kBGRA8_UNorm,
+        gpu::ImageFlags::kStorage | gpu::ImageFlags::kShaderResource, &g_d3d9_shared_depth);
 }
 
 void DX9_RenderFrame()
