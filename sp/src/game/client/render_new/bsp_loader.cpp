@@ -1,8 +1,11 @@
 #include "bsp_loader.h"
 #include "bspfile.h"
+#include "gamebspfile.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <unordered_map>
@@ -621,6 +624,211 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             out_vertices.push_back({v0, normal, {uv0[0], uv0[1]}, {lightmap_uv0[0], lightmap_uv0[1]}, texture_index});
             out_vertices.push_back({v1, normal, {uv1[0], uv1[1]}, {lightmap_uv1[0], lightmap_uv1[1]}, texture_index});
             out_vertices.push_back({v2, normal, {uv2[0], uv2[1]}, {lightmap_uv2[0], lightmap_uv2[1]}, texture_index});
+        }
+    }
+}
+
+void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props)
+{
+    out_static_props.clear();
+
+    std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
+    if (!f.is_open())
+    {
+        return;
+    }
+
+    dheader_t hdr;
+    f.read(reinterpret_cast<char*>(&hdr), sizeof(dheader_t));
+
+    if (hdr.ident != IDBSPHEADER)
+    {
+        return;
+    }
+
+    if (hdr.version < MINBSPVERSION || hdr.version > BSPVERSION)
+    {
+        return;
+    }
+
+    lump_t const& game_lump = hdr.lumps[LUMP_GAME_LUMP];
+    if (game_lump.fileofs <= 0 || game_lump.filelen <= 0)
+    {
+        return;
+    }
+
+    std::vector<uint8_t> game_lump_bytes(static_cast<size_t>(game_lump.filelen));
+    f.seekg(game_lump.fileofs, std::ios::beg);
+    f.read(reinterpret_cast<char*>(game_lump_bytes.data()), static_cast<std::streamsize>(game_lump_bytes.size()));
+    if (!f.good())
+    {
+        return;
+    }
+
+    if (game_lump_bytes.size() < sizeof(dgamelumpheader_t))
+    {
+        return;
+    }
+
+    dgamelumpheader_t const* game_lump_header = reinterpret_cast<dgamelumpheader_t const*>(game_lump_bytes.data());
+    size_t directory_bytes = sizeof(dgamelumpheader_t) + static_cast<size_t>(game_lump_header->lumpCount) * sizeof(dgamelump_t);
+    if (directory_bytes > game_lump_bytes.size())
+    {
+        return;
+    }
+
+    dgamelump_t const* game_lump_directory =
+        reinterpret_cast<dgamelump_t const*>(game_lump_bytes.data() + sizeof(dgamelumpheader_t));
+
+    dgamelump_t const* static_prop_lump_info = nullptr;
+    for (int lump_index = 0; lump_index < game_lump_header->lumpCount; ++lump_index)
+    {
+        if (game_lump_directory[lump_index].id == GAMELUMP_STATIC_PROPS)
+        {
+            static_prop_lump_info = &game_lump_directory[lump_index];
+            break;
+        }
+    }
+
+    if (!static_prop_lump_info)
+    {
+        return;
+    }
+
+    if (static_prop_lump_info->version < 4 || static_prop_lump_info->version > GAMELUMP_STATIC_PROPS_VERSION)
+    {
+        return;
+    }
+
+    if (static_prop_lump_info->fileofs < 0 || static_prop_lump_info->filelen <= 0)
+    {
+        return;
+    }
+
+    std::vector<uint8_t> static_prop_bytes(static_cast<size_t>(static_prop_lump_info->filelen));
+    f.seekg(static_prop_lump_info->fileofs, std::ios::beg);
+    f.read(reinterpret_cast<char*>(static_prop_bytes.data()), static_cast<std::streamsize>(static_prop_bytes.size()));
+    if (!f.good())
+    {
+        return;
+    }
+
+    uint8_t const* cursor = static_prop_bytes.data();
+    uint8_t const* end = static_prop_bytes.data() + static_prop_bytes.size();
+
+    auto read_int = [&](int& out_value) -> bool
+    {
+        if (cursor + sizeof(int) > end)
+        {
+            return false;
+        }
+
+        std::memcpy(&out_value, cursor, sizeof(int));
+        cursor += sizeof(int);
+        return true;
+    };
+
+    auto read_bytes = [&](void* out_data, size_t size) -> bool
+    {
+        if (cursor + size > end)
+        {
+            return false;
+        }
+
+        std::memcpy(out_data, cursor, size);
+        cursor += size;
+        return true;
+    };
+
+    int dict_count = 0;
+    if (!read_int(dict_count) || dict_count < 0)
+    {
+        return;
+    }
+
+    std::vector<StaticPropDictLump_t> dict_entries(static_cast<size_t>(dict_count));
+    if (!dict_entries.empty() && !read_bytes(dict_entries.data(), dict_entries.size() * sizeof(StaticPropDictLump_t)))
+    {
+        return;
+    }
+
+    int leaf_count = 0;
+    if (!read_int(leaf_count) || leaf_count < 0)
+    {
+        return;
+    }
+
+    size_t leaf_bytes = static_cast<size_t>(leaf_count) * sizeof(StaticPropLeafLump_t);
+    if (cursor + leaf_bytes > end)
+    {
+        return;
+    }
+    cursor += leaf_bytes;
+
+    int prop_count = 0;
+    if (!read_int(prop_count) || prop_count < 0)
+    {
+        return;
+    }
+
+    out_static_props.reserve(static_cast<size_t>(prop_count));
+    for (int prop_index = 0; prop_index < prop_count; ++prop_index)
+    {
+        StaticPropInstance instance;
+        unsigned short prop_type = 0;
+
+        if (static_prop_lump_info->version == 4)
+        {
+            StaticPropLumpV4_t prop_data;
+            if (!read_bytes(&prop_data, sizeof(prop_data)))
+            {
+                out_static_props.clear();
+                return;
+            }
+
+            prop_type = prop_data.m_PropType;
+            instance.origin = prop_data.m_Origin;
+            instance.angles = prop_data.m_Angles;
+            instance.skin = prop_data.m_Skin;
+        }
+        else if (static_prop_lump_info->version == 5)
+        {
+            StaticPropLumpV5_t prop_data;
+            if (!read_bytes(&prop_data, sizeof(prop_data)))
+            {
+                out_static_props.clear();
+                return;
+            }
+
+            prop_type = prop_data.m_PropType;
+            instance.origin = prop_data.m_Origin;
+            instance.angles = prop_data.m_Angles;
+            instance.skin = prop_data.m_Skin;
+        }
+        else
+        {
+            StaticPropLump_t prop_data;
+            if (!read_bytes(&prop_data, sizeof(prop_data)))
+            {
+                out_static_props.clear();
+                return;
+            }
+
+            prop_type = prop_data.m_PropType;
+            instance.origin = prop_data.m_Origin;
+            instance.angles = prop_data.m_Angles;
+            instance.skin = prop_data.m_Skin;
+        }
+
+        if (prop_type >= dict_entries.size())
+        {
+            continue;
+        }
+
+        instance.model_name = dict_entries[prop_type].m_Name;
+        if (!instance.model_name.empty())
+        {
+            out_static_props.push_back(instance);
         }
     }
 }

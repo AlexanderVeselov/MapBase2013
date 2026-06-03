@@ -5,9 +5,14 @@
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
 #include "bsp_loader.h"
+#include "bone_setup.h"
+#include "cdll_client_int.h"
 
 #include "bitmap/imageformat.h"
+#include "datacache/imdlcache.h"
+#include "engine/ivmodelinfo.h"
 #include "filesystem.h"
+#include "istudiorender.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "materialsystem/itexture.h"
@@ -111,6 +116,255 @@ std::array<uint8_t, 16> MakeFallbackTexturePixels()
 {
     return {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
 }
+
+IMaterial* FindNamedMaterial(char const* material_name)
+{
+    if (!material_name || material_name[0] == '\0')
+    {
+        return nullptr;
+    }
+
+    IMaterial* material = materials->FindMaterial(material_name, TEXTURE_GROUP_WORLD, false);
+    if (material && !IsErrorMaterial(material))
+    {
+        return material;
+    }
+
+    material = materials->FindMaterial(material_name, TEXTURE_GROUP_MODEL, false);
+    if (material && !IsErrorMaterial(material))
+    {
+        return material;
+    }
+
+    return nullptr;
+}
+
+float GetVector4DComponent(Vector4D const& value, int index)
+{
+    switch (index)
+    {
+    case 0: return value.x;
+    case 1: return value.y;
+    case 2: return value.z;
+    case 3: return value.w;
+    default: return 0.0f;
+    }
+}
+
+uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_indices,
+    std::vector<BspMaterial>& materials_out, std::string const& material_name)
+{
+    if (material_name.empty())
+    {
+        return 0;
+    }
+
+    auto existing = material_indices.find(material_name);
+    if (existing != material_indices.end())
+    {
+        return existing->second;
+    }
+
+    materials_out.push_back(BspMaterial{material_name, 1, 1});
+    uint32_t texture_index = static_cast<uint32_t>(materials_out.size());
+    material_indices.emplace(material_name, texture_index);
+    return texture_index;
+}
+
+Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world,
+    matrix3x4_t const pose_to_world[MAXSTUDIOBONES],
+    uint32_t texture_index, float fallback_lightmap_u, float fallback_lightmap_v)
+{
+    (void)pose_to_world;
+
+    // GetTriangles already returns ready-to-rasterize triangle vertices for debug/perf tooling.
+    // Positions are still in model space for static props, so apply the prop instance transform once here.
+    Vector position;
+    Vector normal = source_vertex.m_Normal;
+    VectorTransform(source_vertex.m_Position, model_to_world, position);
+    VectorRotate(source_vertex.m_Normal, model_to_world, normal);
+    if (normal.Dot(normal) > 0.0f)
+    {
+        normal.NormalizeInPlace();
+    }
+
+    return Vertex{position, normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
+        {fallback_lightmap_u, fallback_lightmap_v}, texture_index};
+
+#if 0
+    Vector position(0.0f, 0.0f, 0.0f);
+    Vector normal(0.0f, 0.0f, 0.0f);
+    float total_weight = 0.0f;
+
+    for (int bone_weight_index = 0; bone_weight_index < source_vertex.m_NumBones && bone_weight_index < 4; ++bone_weight_index)
+    {
+        float weight = GetVector4DComponent(source_vertex.m_BoneWeight, bone_weight_index);
+        int bone_index = source_vertex.m_BoneIndex[bone_weight_index];
+        if (weight <= 0.0f || bone_index < 0 || bone_index >= MAXSTUDIOBONES)
+        {
+            continue;
+        }
+
+        Vector transformed_position;
+        Vector transformed_normal;
+        VectorTransform(source_vertex.m_Position, pose_to_world[bone_index], transformed_position);
+        VectorRotate(source_vertex.m_Normal, pose_to_world[bone_index], transformed_normal);
+
+        position += transformed_position * weight;
+        normal += transformed_normal * weight;
+        total_weight += weight;
+    }
+
+    if (total_weight <= 0.0f)
+    {
+        position = source_vertex.m_Position;
+        normal = source_vertex.m_Normal;
+    }
+    else if (total_weight != 1.0f)
+    {
+        float weight_scale = 1.0f / total_weight;
+        position *= weight_scale;
+        normal *= weight_scale;
+    }
+
+    if (normal.Dot(normal) > 0.0f)
+    {
+        normal.NormalizeInPlace();
+    }
+
+    return Vertex{position, normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
+        {fallback_lightmap_u, fallback_lightmap_v}, texture_index};
+#endif
+}
+
+void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
+    BspLightmapAtlas const& lightmap_atlas)
+{
+    if (!modelinfo || !mdlcache || !g_pStudioRender)
+    {
+        return;
+    }
+
+    std::vector<StaticPropInstance> static_props;
+    LoadStaticProps(level_name, static_props);
+    if (static_props.empty())
+    {
+        return;
+    }
+
+    std::unordered_map<std::string, uint32_t> material_indices;
+    material_indices.reserve(out_materials.size());
+    for (size_t material_index = 0; material_index < out_materials.size(); ++material_index)
+    {
+        material_indices.emplace(out_materials[material_index].material_name, static_cast<uint32_t>(material_index + 1));
+    }
+
+    float fallback_lightmap_u = 0.5f / static_cast<float>((std::max)(lightmap_atlas.width, 1));
+    float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(lightmap_atlas.height, 1));
+    int appended_prop_count = 0;
+    int appended_triangle_count = 0;
+
+    MDLCACHE_CRITICAL_SECTION();
+    for (StaticPropInstance const& static_prop : static_props)
+    {
+        matrix3x4_t model_to_world;
+        AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
+
+        MDLHandle_t mdl_handle = mdlcache->FindMDL(static_prop.model_name.c_str());
+        if (mdl_handle == MDLHANDLE_INVALID)
+        {
+            continue;
+        }
+
+        studiohdr_t* studio_hdr = mdlcache->LockStudioHdr(mdl_handle);
+        if (!studio_hdr)
+        {
+            continue;
+        }
+
+        studiohwdata_t* hardware_data = mdlcache->GetHardwareData(mdl_handle);
+        if (!hardware_data)
+        {
+            mdlcache->UnlockStudioHdr(mdl_handle);
+            continue;
+        }
+
+        CStudioHdr studio_hdr_wrapper(studio_hdr, mdlcache);
+        float pose_parameters[MAXSTUDIOPOSEPARAM] = {};
+        Vector bone_positions[MAXSTUDIOBONES];
+        Quaternion bone_rotations[MAXSTUDIOBONES];
+        matrix3x4_t bone_to_world[MAXSTUDIOBONES];
+
+        IBoneSetup bone_setup(&studio_hdr_wrapper, BONE_USED_BY_ANYTHING, pose_parameters);
+        bone_setup.InitPose(bone_positions, bone_rotations);
+        Studio_BuildMatrices(&studio_hdr_wrapper, static_prop.angles, static_prop.origin, bone_positions, bone_rotations, -1, 1.0f,
+            bone_to_world, BONE_USED_BY_ANYTHING);
+
+        DrawModelInfo_t draw_info = {};
+        draw_info.m_pStudioHdr = studio_hdr;
+        draw_info.m_pHardwareData = hardware_data;
+        draw_info.m_Skin = static_prop.skin;
+        draw_info.m_Body = 0;
+        draw_info.m_HitboxSet = 0;
+        draw_info.m_pClientEntity = nullptr;
+        draw_info.m_Lod = hardware_data->m_RootLOD;
+        draw_info.m_bStaticLighting = true;
+
+        GetTriangles_Output_t triangle_output;
+        g_pStudioRender->GetTriangles(draw_info, bone_to_world, triangle_output);
+        int triangles_before_prop = appended_triangle_count;
+
+        for (int batch_index = 0; batch_index < triangle_output.m_MaterialBatches.Count(); ++batch_index)
+        {
+            GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
+            std::string material_name = material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "";
+            uint32_t texture_index = FindOrAddMaterial(material_indices, out_materials, material_name);
+
+            auto append_vertex_by_index = [&](int vertex_index)
+            {
+                if (vertex_index < 0 || vertex_index >= material_batch.m_Verts.Count())
+                {
+                    return;
+                }
+
+                out_vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], model_to_world,
+                    triangle_output.m_PoseToWorld,
+                    texture_index, fallback_lightmap_u, fallback_lightmap_v));
+            };
+
+            if (material_batch.m_TriListIndices.Count() >= 3)
+            {
+                for (int index = 0; index + 2 < material_batch.m_TriListIndices.Count(); index += 3)
+                {
+                    append_vertex_by_index(material_batch.m_TriListIndices[index + 0]);
+                    append_vertex_by_index(material_batch.m_TriListIndices[index + 1]);
+                    append_vertex_by_index(material_batch.m_TriListIndices[index + 2]);
+                    ++appended_triangle_count;
+                }
+            }
+            else
+            {
+                for (int vertex_index = 0; vertex_index + 2 < material_batch.m_Verts.Count(); vertex_index += 3)
+                {
+                    append_vertex_by_index(vertex_index + 0);
+                    append_vertex_by_index(vertex_index + 1);
+                    append_vertex_by_index(vertex_index + 2);
+                    ++appended_triangle_count;
+                }
+            }
+        }
+
+        if (appended_triangle_count > triangles_before_prop)
+        {
+            ++appended_prop_count;
+        }
+
+        mdlcache->UnlockStudioHdr(mdl_handle);
+    }
+
+    Msg("render_new: static props instances=%d rendered=%d triangles=%d\n",
+        static_props.size(), appended_prop_count, appended_triangle_count);
+}
 }
 
 void ComputeViewMatrix(VMatrix* pViewMatrix, const Vector& origin, const QAngle& angles)
@@ -206,6 +460,7 @@ void RenderImpl::LoadLevel(char const* level_name)
     std::vector<BspMaterial> bsp_materials;
     BspLightmapAtlas lightmap_atlas;
     LoadBsp(level_name, cpu_vertices, bsp_materials, lightmap_atlas);
+    AppendStaticPropTriangles(level_name, cpu_vertices, bsp_materials, lightmap_atlas);
 
     if (!lightmap_atlas.rgba_pixels.empty() && lightmap_atlas.width > 0 && lightmap_atlas.height > 0)
     {
@@ -317,8 +572,8 @@ bool ResolveBaseTextureName(char const* material_name, std::string& out_texture_
         return false;
     }
 
-    IMaterial* material = materials->FindMaterial(material_name, TEXTURE_GROUP_WORLD, false);
-    if (IsErrorMaterial(material))
+    IMaterial* material = FindNamedMaterial(material_name);
+    if (!material)
     {
         return false;
     }

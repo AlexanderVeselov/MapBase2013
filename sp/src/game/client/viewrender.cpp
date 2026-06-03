@@ -4446,6 +4446,10 @@ static void DrawOpaqueRenderables_DrawBrushModels( CClientRenderablesList::CEntr
 
 static void DrawOpaqueRenderables_DrawStaticProps( CClientRenderablesList::CEntry *pEntitiesBegin, CClientRenderablesList::CEntry *pEntitiesEnd, ERenderDepthMode DepthMode )
 {
+#ifdef SOURCE_SDK_RENDER_NEW
+	return;
+#endif
+
 	if ( pEntitiesEnd == pEntitiesBegin )
 		return;
 
