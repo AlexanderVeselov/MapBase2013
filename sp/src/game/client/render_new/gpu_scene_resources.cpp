@@ -10,6 +10,7 @@
 #include "vtf/vtf.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +20,11 @@ extern IMaterialSystem* materials;
 namespace
 {
 constexpr uint32_t kMaxMaterialTextures = 512;
+
+std::array<uint8_t, 16> MakeFallbackTexturePixels()
+{
+    return {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
+}
 
 std::string StripExtension(std::string path)
 {
@@ -188,11 +194,9 @@ void UploadVertices(gpu::DevicePtr const& device, std::vector<Vertex> const& ver
     }
 }
 
-void RebuildMaterialBindings(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::vector<BspMaterial> const& bsp_materials,
-    std::vector<Vertex>& vertices, gpu::BufferPtr const& view_proj_buffer, gpu::BufferPtr const& scene_transform_buffer,
-    gpu::SamplerPtr const& texture_sampler, gpu::SamplerPtr const& lightmap_sampler, gpu::ImagePtr const& fallback_texture,
-    gpu::ImagePtr const& fallback_lightmap_texture, gpu::DescriptorSetPtr const& pipeline_descriptor_set, RenderSceneGpu& out_gpu_scene)
+    std::vector<Vertex>& vertices, gpu::ImagePtr const& fallback_texture, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.material_textures.clear();
     out_gpu_scene.material_textures.resize(bsp_materials.size() + 1);
@@ -227,32 +231,31 @@ void RebuildMaterialBindings(gpu::DevicePtr const& device, gpu::CommandBuffer& c
             vertex.texture_index = 0;
         }
     }
+}
+}
 
-    std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
-    for (uint32_t texture_index = 0; texture_index < kMaxMaterialTextures; ++texture_index)
+void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts)
+{
+    if (!fallback_texture)
     {
-        gpu::ImagePtr const& image = texture_index < out_gpu_scene.material_textures.size() && out_gpu_scene.material_textures[texture_index]
-            ? out_gpu_scene.material_textures[texture_index]
-            : fallback_texture;
-        image_descriptors[texture_index] = gpu::ImageDescriptor{image.get(), {}};
+        std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
+        fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, fallback_pixels.data(), fallback_pixels.size());
     }
 
-    pipeline_descriptor_set->Clear();
-    pipeline_descriptor_set->BindBuffer(*view_proj_buffer, 0);
-    pipeline_descriptor_set->BindBuffer(*scene_transform_buffer, 1);
-    pipeline_descriptor_set->BindImageArray(image_descriptors, 0, 1);
-    pipeline_descriptor_set->BindSampler(*texture_sampler, 0, 2);
-    pipeline_descriptor_set->BindSampler(*lightmap_sampler, 1, 2);
-    pipeline_descriptor_set->BindImage(*(out_gpu_scene.lightmap_texture ? out_gpu_scene.lightmap_texture : fallback_lightmap_texture), 0, 3);
-}
+    if (!fallback_lightmap_texture)
+    {
+        std::array<uint8_t, 4> fallback_lightmap_pixels = {255, 255, 255, 255};
+        fallback_lightmap_texture =
+            CreateTextureImage(device, cmd_buffer, image_layouts, 1, 1, fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
+    }
 }
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene,
-    gpu::BufferPtr const& view_proj_buffer, gpu::SamplerPtr const& texture_sampler, gpu::SamplerPtr const& lightmap_sampler,
-    gpu::ImagePtr const& fallback_texture, gpu::ImagePtr const& fallback_lightmap_texture,
-    gpu::DescriptorSetPtr const& pipeline_descriptor_set, RenderSceneGpu& out_gpu_scene)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, RenderSceneGpu& out_gpu_scene)
 {
+    out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
+
     if (!scene.lightmap_atlas.rgba_pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
     {
         out_gpu_scene.lightmap_texture = CreateTextureImage(device, cmd_buffer, image_layouts,
@@ -261,7 +264,7 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     }
     else
     {
-        out_gpu_scene.lightmap_texture = fallback_lightmap_texture;
+        out_gpu_scene.lightmap_texture = out_gpu_scene.fallback_lightmap_texture;
     }
 
     out_gpu_scene.scene_transform_buffer = device->CreateBuffer(sizeof(SceneTransform) * scene.transforms.size(), sizeof(SceneTransform),
@@ -271,8 +274,6 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     out_gpu_scene.scene_transform_buffer->Unmap();
 
     std::vector<Vertex> upload_vertices = scene.vertices;
-    RebuildMaterialBindings(device, cmd_buffer, image_layouts, scene.materials, upload_vertices, view_proj_buffer,
-        out_gpu_scene.scene_transform_buffer, texture_sampler, lightmap_sampler, fallback_texture, fallback_lightmap_texture,
-        pipeline_descriptor_set, out_gpu_scene);
+    BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, upload_vertices, out_gpu_scene.fallback_texture, out_gpu_scene);
     UploadVertices(device, upload_vertices, out_gpu_scene);
 }

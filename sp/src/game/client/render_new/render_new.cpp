@@ -6,6 +6,9 @@
 #include "scene_builder.h"
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
+#include "render_graph.h"
+#include "draw_scene_task.h"
+#include "copy_depth_task.h"
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
 #include "cliententitylist.h"
@@ -32,6 +35,9 @@ private:
 private:
     RenderBackendContext backend_;
     RenderBackendResources backend_resources_;
+    RenderGraph render_graph_;
+    DrawSceneTask draw_scene_task_;
+    CopyDepthTask copy_depth_task_;
     RenderSceneCpu scene_;
     RenderSceneGpu gpu_scene_;
     uint32_t viewport_width_ = 0;
@@ -70,6 +76,17 @@ void ComputeViewMatrices(ViewSetup const& view_setup, VMatrix* pWorldToView, VMa
 void RenderImpl::Init()
 {
     InitializeRenderBackend(__FILE__, backend_, backend_resources_, gpu_scene_);
+    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
+        backend_resources_.lightmap_sampler, gpu_scene_);
+    copy_depth_task_.Initialize(backend_.device, backend_resources_);
+    EnsureRenderCommandBuffer(backend_);
+    gpu_scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
+    SubmitRenderCommandsAndWait(backend_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
+        backend_resources_.lightmap_sampler, gpu_scene_);
+    render_graph_.Reset();
+    render_graph_.AddTask(draw_scene_task_);
+    render_graph_.AddTask(copy_depth_task_);
 }
 
 void RenderImpl::LoadLevel(char const* level_name)
@@ -94,9 +111,9 @@ void RenderImpl::BuildCpuScene(char const* level_name)
 void RenderImpl::UploadSceneToGpu()
 {
     EnsureRenderCommandBuffer(backend_);
-    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, backend_resources_.view_proj_buffer,
-        backend_resources_.texture_sampler, backend_resources_.lightmap_sampler, backend_resources_.fallback_texture,
-        backend_resources_.fallback_lightmap_texture, backend_resources_.pipeline_descriptor_set, gpu_scene_);
+    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
+        backend_resources_.lightmap_sampler, gpu_scene_);
     SubmitRenderCommandsAndWait(backend_);
 }
 
@@ -126,19 +143,8 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
 void RenderImpl::DrawScene()
 {
-    backend_.cmd_buffer->ClearImage(backend_resources_.color_texture, 0.0f, 0.5f, 0.5f, 1.0f);
-    backend_.cmd_buffer->ClearDepthImage(backend_resources_.depth_texture, 1.0f);
-    backend_.cmd_buffer->BindPipeline(backend_resources_.pipeline);
-    backend_.cmd_buffer->BindDescriptorSet(backend_resources_.pipeline_descriptor_set);
-    backend_.cmd_buffer->SetVertexBuffer(gpu_scene_.vertex_buffer, sizeof(Vertex));
-    backend_.cmd_buffer->Draw(gpu_scene_.vertex_count);
-
-    TransitionRenderImage(backend_, backend_resources_.depth_texture, gpu::ImageLayout::kShaderRead);
-    TransitionRenderImage(backend_, backend_resources_.shared_depth_texture, gpu::ImageLayout::kShaderReadWrite);
-    backend_.cmd_buffer->BindPipeline(backend_resources_.copy_depth_pipeline);
-    backend_.cmd_buffer->BindDescriptorSet(backend_resources_.copy_depth_descriptor_set);
-    backend_.cmd_buffer->Dispatch((viewport_width_ + 15) / 16, (viewport_height_ + 15) / 16, 1);
-    backend_.cmd_buffer->StorageBarrier(backend_resources_.shared_depth_texture);
+    RenderTaskContext task_context{backend_, backend_resources_, gpu_scene_, viewport_width_, viewport_height_};
+    render_graph_.Execute(task_context);
 }
 
 void RenderImpl::FinalizeFrame()

@@ -3,9 +3,11 @@
 #include "bsp_loader.h"
 
 #include "gpu_buffer.hpp"
+#include "gpu_command_buffer.hpp"
 #include "gpu_image.hpp"
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 struct SceneTransform
@@ -73,7 +75,12 @@ struct RenderSceneGpu
 {
     gpu::BufferPtr vertex_buffer;
     gpu::BufferPtr scene_transform_buffer;
+    gpu::ImagePtr fallback_texture;
+    gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
     std::vector<gpu::ImagePtr> material_textures;
     uint32_t vertex_count = 0;
+
+    void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts);
 };

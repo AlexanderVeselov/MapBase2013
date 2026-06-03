@@ -31,15 +31,9 @@ struct RenderBackendResources
     gpu::ImagePtr color_texture;
     gpu::ImagePtr depth_texture;
     gpu::ImagePtr shared_depth_texture;
-    gpu::GraphicsPipelinePtr pipeline;
-    gpu::ComputePipelinePtr copy_depth_pipeline;
-    gpu::DescriptorSetPtr pipeline_descriptor_set;
-    gpu::DescriptorSetPtr copy_depth_descriptor_set;
     gpu::BufferPtr view_proj_buffer;
     gpu::SamplerPtr texture_sampler;
     gpu::SamplerPtr lightmap_sampler;
-    gpu::ImagePtr fallback_texture;
-    gpu::ImagePtr fallback_lightmap_texture;
 };
 
 void InitializeRenderBackend(char const* source_file_path, RenderBackendContext& context,
@@ -47,5 +41,3 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
 void EnsureRenderCommandBuffer(RenderBackendContext& context);
 void TransitionRenderImage(RenderBackendContext& context, gpu::ImagePtr const& image, gpu::ImageLayout desired_layout);
 void SubmitRenderCommandsAndWait(RenderBackendContext& context);
-gpu::ImagePtr CreateBackendTextureImage(RenderBackendContext& context, uint32_t width, uint32_t height,
-    void const* data, size_t data_size);
