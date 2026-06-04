@@ -1,86 +1,19 @@
 #include "cbase.h"
-#include "scene_builder.h"
+#include "source_static_prop_loader.h"
 
 #include "bone_setup.h"
-#include "cdll_client_int.h"
-#include "cliententitylist.h"
-#include "icliententity.h"
-
+#include "bsp_loader.h"
 #include "datacache/imdlcache.h"
 #include "engine/ivmodelinfo.h"
 #include "istudiorender.h"
-#include "materialsystem/imaterial.h"
-#include "model_types.h"
+#include "source_scene_utils.h"
 
 #include <algorithm>
-#include <cfloat>
-#include <cstdlib>
 #include <string>
 #include <unordered_map>
 
 namespace
 {
-uint32_t AddInstance(std::vector<RenderInstance>& out_instances, std::vector<Vertex>& out_vertices, uint32_t first_vertex,
-    uint32_t vertex_count, uint32_t material_index, uint32_t transform_index)
-{
-    RenderInstance instance = {};
-    instance.first_vertex = first_vertex;
-    instance.vertex_count = vertex_count;
-    instance.material_index = material_index;
-    instance.transform_index = transform_index;
-
-    uint32_t instance_id = static_cast<uint32_t>(out_instances.size());
-    out_instances.push_back(instance);
-    for (uint32_t vertex_offset = 0; vertex_offset < vertex_count; ++vertex_offset)
-    {
-        out_vertices[first_vertex + vertex_offset].instance_id = instance_id;
-    }
-
-    return instance_id;
-}
-
-void ComputeVertexBounds(std::vector<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count, Vector& mins, Vector& maxs)
-{
-    mins.Init(FLT_MAX, FLT_MAX, FLT_MAX);
-    maxs.Init(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-
-    if (first_vertex >= vertices.size() || vertex_count == 0 || first_vertex + vertex_count > vertices.size())
-    {
-        mins.Init();
-        maxs.Init();
-        return;
-    }
-
-    for (uint32_t vertex_offset = 0; vertex_offset < vertex_count; ++vertex_offset)
-    {
-        Vector const& position = vertices[first_vertex + vertex_offset].pos;
-        mins.x = (std::min)(mins.x, position.x);
-        mins.y = (std::min)(mins.y, position.y);
-        mins.z = (std::min)(mins.z, position.z);
-        maxs.x = (std::max)(maxs.x, position.x);
-        maxs.y = (std::max)(maxs.y, position.y);
-        maxs.z = (std::max)(maxs.z, position.z);
-    }
-}
-
-bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
-{
-    if (!model_name || model_name[0] != '*')
-    {
-        return false;
-    }
-
-    char* parse_end = nullptr;
-    long parsed_value = std::strtol(model_name + 1, &parse_end, 10);
-    if (parse_end == model_name + 1 || !parse_end || *parse_end != '\0' || parsed_value <= 0)
-    {
-        return false;
-    }
-
-    out_submodel_index = static_cast<int>(parsed_value);
-    return true;
-}
-
 void ComputeStaticPropVertexColor(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world, float out_color[3])
 {
     Vector world_position;
@@ -118,9 +51,9 @@ uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_i
     }
 
     materials_out.push_back(RenderMaterial{material_name, 1, 1});
-    uint32_t texture_index = static_cast<uint32_t>(materials_out.size());
-    material_indices.emplace(material_name, texture_index);
-    return texture_index;
+    uint32_t material_index = static_cast<uint32_t>(materials_out.size());
+    material_indices.emplace(material_name, material_index);
+    return material_index;
 }
 
 Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world,
@@ -133,9 +66,9 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x
     ComputeStaticPropVertexColor(source_vertex, model_to_world, vertex.color);
     return vertex;
 }
+}
 
-void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_vertices, std::vector<RenderMaterial>& out_materials,
-    LightmapAtlas const& lightmap_atlas, std::vector<SceneTransform>& out_scene_transforms, std::vector<RenderInstance>& out_instances)
+void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSceneCpu& io_scene) const
 {
     if (!modelinfo || !mdlcache || !g_pStudioRender)
     {
@@ -150,14 +83,14 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
     }
 
     std::unordered_map<std::string, uint32_t> material_indices;
-    material_indices.reserve(out_materials.size());
-    for (size_t material_index = 0; material_index < out_materials.size(); ++material_index)
+    material_indices.reserve(io_scene.materials.size());
+    for (size_t material_index = 0; material_index < io_scene.materials.size(); ++material_index)
     {
-        material_indices.emplace(out_materials[material_index].material_name, static_cast<uint32_t>(material_index + 1));
+        material_indices.emplace(io_scene.materials[material_index].material_name, static_cast<uint32_t>(material_index + 1));
     }
 
-    float fallback_lightmap_u = 0.5f / static_cast<float>((std::max)(lightmap_atlas.width, 1));
-    float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(lightmap_atlas.height, 1));
+    float fallback_lightmap_u = 0.5f / static_cast<float>((std::max)(io_scene.lightmap_atlas.width, 1));
+    float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(io_scene.lightmap_atlas.height, 1));
     int appended_prop_count = 0;
     int appended_triangle_count = 0;
 
@@ -166,8 +99,8 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
     {
         matrix3x4_t model_to_world;
         AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
-        uint32_t transform_index = static_cast<uint32_t>(out_scene_transforms.size());
-        out_scene_transforms.push_back(MakeSceneTransform(model_to_world));
+        uint32_t transform_index = static_cast<uint32_t>(io_scene.transforms.size());
+        io_scene.transforms.push_back(MakeSceneTransform(model_to_world));
 
         MDLHandle_t mdl_handle = mdlcache->FindMDL(static_prop.model_name.c_str());
         if (mdl_handle == MDLHANDLE_INVALID)
@@ -215,8 +148,8 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
         {
             GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
             std::string material_name = material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "";
-            uint32_t material_index = FindOrAddMaterial(material_indices, out_materials, material_name);
-            uint32_t first_vertex = static_cast<uint32_t>(out_vertices.size());
+            uint32_t material_index = FindOrAddMaterial(material_indices, io_scene.materials, material_name);
+            uint32_t first_vertex = static_cast<uint32_t>(io_scene.vertices.size());
             int triangles_before_batch = appended_triangle_count;
 
             auto append_vertex_by_index = [&](int vertex_index)
@@ -226,7 +159,7 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
                     return;
                 }
 
-                out_vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], model_to_world,
+                io_scene.vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], model_to_world,
                     triangle_output.m_PoseToWorld, fallback_lightmap_u, fallback_lightmap_v));
             };
 
@@ -251,10 +184,10 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
                 }
             }
 
-            uint32_t vertex_count = static_cast<uint32_t>(out_vertices.size()) - first_vertex;
+            uint32_t vertex_count = static_cast<uint32_t>(io_scene.vertices.size()) - first_vertex;
             if (vertex_count > 0 && appended_triangle_count > triangles_before_batch)
             {
-                AddInstance(out_instances, out_vertices, first_vertex, vertex_count, material_index, transform_index);
+                AddRenderInstance(io_scene.instances, io_scene.vertices, first_vertex, vertex_count, material_index, transform_index);
                 ++appended_prop_count;
             }
         }
@@ -265,39 +198,3 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
     Msg("render_next: static props instances=%d rendered=%d triangles=%d\n",
         static_props.size(), appended_prop_count, appended_triangle_count);
 }
-}
-
-void BuildRenderSceneCpu(char const* level_name, RenderSceneCpu& out_scene, SourceSceneBuildCache& out_cache)
-{
-    out_scene = {};
-    out_cache = {};
-    out_scene.transforms.push_back(MakeIdentitySceneTransform());
-
-    LoadBsp(level_name, out_cache.brush_model_vertices, out_scene.materials, out_scene.lightmap_atlas, out_cache.brush_model_ranges);
-    out_scene.vertices = out_cache.brush_model_vertices;
-    if (!out_cache.brush_model_ranges.empty())
-    {
-        out_scene.vertices.resize(out_cache.brush_model_ranges.front().first_vertex);
-    }
-
-    out_scene.instances.clear();
-    uint32_t vertex_offset = 0;
-    while (vertex_offset < out_scene.vertices.size())
-    {
-        uint32_t range_end = vertex_offset + 1;
-        uint32_t material_index = out_scene.vertices[vertex_offset].instance_id;
-        while (range_end < out_scene.vertices.size() && out_scene.vertices[range_end].instance_id == material_index)
-        {
-            ++range_end;
-        }
-
-        AddInstance(out_scene.instances, out_scene.vertices, vertex_offset, range_end - vertex_offset, material_index, 0);
-        vertex_offset = range_end;
-    }
-
-    AppendStaticPropTriangles(level_name, out_scene.vertices, out_scene.materials, out_scene.lightmap_atlas, out_scene.transforms, out_scene.instances);
-    out_cache.base_vertices = out_scene.vertices;
-    out_cache.base_transforms = out_scene.transforms;
-    out_cache.base_instances = out_scene.instances;
-}
-

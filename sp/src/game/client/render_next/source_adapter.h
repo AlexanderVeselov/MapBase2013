@@ -1,8 +1,13 @@
 #pragma once
 
 #include "engine_adapter.h"
-#include "scene_builder.h"
+#include "source_brush_entity_adapter.h"
+#include "source_scene_cache.h"
+#include "source_static_prop_loader.h"
+#include "source_world_loader.h"
 
+#include <array>
+#include <string>
 #include <vector>
 
 class SourceAdapter final : public EngineAdapter
@@ -17,14 +22,8 @@ public:
     void UpdateDynamicSceneTransforms(RenderSceneCpu& scene) override;
 
 private:
-    struct DynamicTransformBinding
-    {
-        int entity_index = -1;
-        uint32_t transform_index = 0;
-    };
-
-private:
+    SourceBrushEntityAdapter brush_entity_adapter_;
+    SourceWorldLoader world_loader_;
+    SourceStaticPropLoader static_prop_loader_;
     SourceSceneBuildCache build_cache_;
-    std::vector<DynamicTransformBinding> dynamic_bindings_;
-    bool brush_entities_initialized_ = false;
 };
