@@ -37,20 +37,6 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
     resources.view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
         gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
 
-    gpu::SamplerDesc sampler_desc;
-    sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
-    sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
-    sampler_desc.address_u = gpu::SamplerAddressMode::kRepeat;
-    sampler_desc.address_v = gpu::SamplerAddressMode::kRepeat;
-    resources.texture_sampler = context.device->GetSampler(sampler_desc);
-
-    gpu::SamplerDesc lightmap_sampler_desc;
-    lightmap_sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
-    lightmap_sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
-    lightmap_sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
-    lightmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
-    resources.lightmap_sampler = context.device->GetSampler(lightmap_sampler_desc);
-
     SceneTransform identity_transform = MakeIdentitySceneTransform();
     gpu_scene.scene_transform_buffer = context.device->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
         gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);

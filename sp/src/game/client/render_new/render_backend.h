@@ -32,8 +32,6 @@ struct RenderBackendResources
     gpu::ImagePtr depth_texture;
     gpu::ImagePtr shared_depth_texture;
     gpu::BufferPtr view_proj_buffer;
-    gpu::SamplerPtr texture_sampler;
-    gpu::SamplerPtr lightmap_sampler;
 };
 
 void InitializeRenderBackend(char const* source_file_path, RenderBackendContext& context,

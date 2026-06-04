@@ -132,19 +132,22 @@ $Project "Client (Episodic)"
 		{
 			$File "render_new\render_new.cpp"
 			$File "render_new\render_new.h"
-			$File "render_new\copy_depth_task.cpp"
-			$File "render_new\copy_depth_task.h"
-			$File "render_new\draw_scene_task.cpp"
-			$File "render_new\draw_scene_task.h"
 			$File "render_new\gpu_scene_resources.cpp"
 			$File "render_new\gpu_scene_resources.h"
 			$File "render_new\render_backend.cpp"
 			$File "render_new\render_backend.h"
-			$File "render_new\render_graph.cpp"
-			$File "render_new\render_graph.h"
 			$File "render_new\render_scene.h"
 			$File "render_new\scene_builder.cpp"
 			$File "render_new\scene_builder.h"
+			$Folder "Tasks"
+			{
+				$File "render_new\tasks\copy_depth_task.cpp"
+				$File "render_new\tasks\copy_depth_task.h"
+				$File "render_new\tasks\draw_scene_task.cpp"
+				$File "render_new\tasks\draw_scene_task.h"
+				$File "render_new\tasks\render_graph.cpp"
+				$File "render_new\tasks\render_graph.h"
+			}
 		}
 	}
 	

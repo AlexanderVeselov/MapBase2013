@@ -8,12 +8,12 @@ set(CLIENT_HL2_RENDER_NEW_FACADE_SOURCES
 
 set(CLIENT_HL2_RENDER_NEW_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/render_new/bsp_loader.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/copy_depth_task.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/copy_depth_task.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/dx9_interop.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/draw_scene_task.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/draw_scene_task.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/gpu_scene_resources.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/render_backend.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/render_graph.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/render_graph.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_new/scene_builder.cpp"
 )
 

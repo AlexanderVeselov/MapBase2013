@@ -7,11 +7,9 @@ constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
 void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& view_proj_buffer,
-    gpu::SamplerPtr const& texture_sampler, gpu::SamplerPtr const& lightmap_sampler, RenderSceneGpu const& gpu_scene)
+    RenderSceneGpu const& gpu_scene)
 {
     (void)view_proj_buffer;
-    (void)texture_sampler;
-    (void)lightmap_sampler;
     (void)gpu_scene;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
@@ -22,11 +20,24 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
     pipeline_ = device->CreateGraphicsPipeline(pipeline_desc);
 
+    gpu::SamplerDesc sampler_desc;
+    sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
+    sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
+    sampler_desc.address_u = gpu::SamplerAddressMode::kRepeat;
+    sampler_desc.address_v = gpu::SamplerAddressMode::kRepeat;
+    texture_sampler_ = device->GetSampler(sampler_desc);
+
+    gpu::SamplerDesc lightmap_sampler_desc;
+    lightmap_sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
+    lightmap_sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
+    lightmap_sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
+    lightmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
+    lightmap_sampler_ = device->GetSampler(lightmap_sampler_desc);
+
     descriptor_set_ = pipeline_->CreateDescriptorSet();
 }
 
-void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, gpu::SamplerPtr const& texture_sampler,
-    gpu::SamplerPtr const& lightmap_sampler, RenderSceneGpu const& gpu_scene)
+void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderSceneGpu const& gpu_scene)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
     for (uint32_t texture_index = 0; texture_index < kMaxMaterialTextures; ++texture_index)
@@ -41,8 +52,8 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, 
     descriptor_set_->BindBuffer(*view_proj_buffer, 0);
     descriptor_set_->BindBuffer(*gpu_scene.scene_transform_buffer, 1);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
-    descriptor_set_->BindSampler(*texture_sampler, 0, 2);
-    descriptor_set_->BindSampler(*lightmap_sampler, 1, 2);
+    descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
+    descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
     descriptor_set_->BindImage(*(gpu_scene.lightmap_texture ? gpu_scene.lightmap_texture : gpu_scene.fallback_lightmap_texture), 0, 3);
 }
 

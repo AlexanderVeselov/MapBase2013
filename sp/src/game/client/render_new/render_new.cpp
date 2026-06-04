@@ -6,9 +6,9 @@
 #include "scene_builder.h"
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
-#include "render_graph.h"
-#include "draw_scene_task.h"
-#include "copy_depth_task.h"
+#include "tasks/render_graph.h"
+#include "tasks/draw_scene_task.h"
+#include "tasks/copy_depth_task.h"
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
 #include "cliententitylist.h"
@@ -76,14 +76,12 @@ void ComputeViewMatrices(ViewSetup const& view_setup, VMatrix* pWorldToView, VMa
 void RenderImpl::Init()
 {
     InitializeRenderBackend(__FILE__, backend_, backend_resources_, gpu_scene_);
-    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
-        backend_resources_.lightmap_sampler, gpu_scene_);
+    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
     EnsureRenderCommandBuffer(backend_);
     gpu_scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
     SubmitRenderCommandsAndWait(backend_);
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
-        backend_resources_.lightmap_sampler, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
     render_graph_.Reset();
     render_graph_.AddTask(draw_scene_task_);
     render_graph_.AddTask(copy_depth_task_);
@@ -112,8 +110,7 @@ void RenderImpl::UploadSceneToGpu()
 {
     EnsureRenderCommandBuffer(backend_);
     UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, gpu_scene_);
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, backend_resources_.texture_sampler,
-        backend_resources_.lightmap_sampler, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
     SubmitRenderCommandsAndWait(backend_);
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "render_backend.h"
-#include "render_scene.h"
+#include "../render_backend.h"
+#include "../render_scene.h"
 
 #include <vector>
 
