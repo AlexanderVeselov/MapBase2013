@@ -93,7 +93,6 @@ struct RenderSceneGpu
     gpu::BufferPtr scene_transform_buffer;
     gpu::BufferPtr scene_instance_buffer;
     gpu::BufferPtr scene_vertex_color_buffer;
-    gpu::BufferPtr skybox_texture_ids_buffer;
     gpu::ImagePtr fallback_texture;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;

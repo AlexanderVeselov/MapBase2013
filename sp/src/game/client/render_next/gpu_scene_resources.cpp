@@ -321,15 +321,6 @@ void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
         scene_vertex_color_buffer->Unmap();
     }
 
-    if (!skybox_texture_ids_buffer)
-    {
-        std::array<uint32_t, 6> fallback_skybox_texture_ids = {};
-        skybox_texture_ids_buffer = device->CreateBuffer(sizeof(uint32_t) * fallback_skybox_texture_ids.size(), sizeof(uint32_t),
-            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-        void* skybox_texture_ids_data = skybox_texture_ids_buffer->Map();
-        std::memcpy(skybox_texture_ids_data, fallback_skybox_texture_ids.data(), sizeof(uint32_t) * fallback_skybox_texture_ids.size());
-        skybox_texture_ids_buffer->Unmap();
-    }
 }
 
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
@@ -371,15 +362,6 @@ void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer&
         out_gpu_scene.material_textures.push_back(std::move(sky_face));
     }
 
-    if (!out_gpu_scene.skybox_texture_ids_buffer)
-    {
-        out_gpu_scene.skybox_texture_ids_buffer = device->CreateBuffer(sizeof(uint32_t) * out_gpu_scene.skybox_texture_ids.size(), sizeof(uint32_t),
-            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-    }
-
-    void* skybox_texture_ids_data = out_gpu_scene.skybox_texture_ids_buffer->Map();
-    std::memcpy(skybox_texture_ids_data, out_gpu_scene.skybox_texture_ids.data(), sizeof(uint32_t) * out_gpu_scene.skybox_texture_ids.size());
-    out_gpu_scene.skybox_texture_ids_buffer->Unmap();
 }
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,

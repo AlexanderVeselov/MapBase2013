@@ -3,10 +3,15 @@ cbuffer SkyCamera : register(b0)
     float4x4 g_inverse_view_proj;
 };
 
+cbuffer g_RootConstants : register(b1)
+{
+    uint4 g_sky_texture_ids_0_3;
+    uint2 g_sky_texture_ids_4_5;
+};
+
 static const uint RENDER_NEXT_MAX_TEXTURES = 512;
 
 Texture2D g_textures[RENDER_NEXT_MAX_TEXTURES] : register(t0, space1);
-StructuredBuffer<uint> g_sky_texture_ids : register(t1);
 SamplerState g_sky_sampler : register(s0, space2);
 RWTexture2D<float4> g_output_tex : register(u6);
 
@@ -62,6 +67,32 @@ uint SelectFace(float3 direction)
     return direction.z >= 0.0f ? 4 : 5;
 }
 
+uint GetSkyTextureIndex(uint face_index)
+{
+    if (face_index == 0)
+    {
+        return g_sky_texture_ids_0_3.x;
+    }
+    if (face_index == 1)
+    {
+        return g_sky_texture_ids_0_3.y;
+    }
+    if (face_index == 2)
+    {
+        return g_sky_texture_ids_0_3.z;
+    }
+    if (face_index == 3)
+    {
+        return g_sky_texture_ids_0_3.w;
+    }
+    if (face_index == 4)
+    {
+        return g_sky_texture_ids_4_5.x;
+    }
+
+    return g_sky_texture_ids_4_5.y;
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
 {
@@ -86,7 +117,6 @@ void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
 
     uint face_index = SelectFace(direction);
     float2 face_uv = saturate(ComputeFaceUv(direction, face_index));
-    uint texture_index = g_sky_texture_ids[face_index];
+    uint texture_index = GetSkyTextureIndex(face_index);
     g_output_tex[dispatch_thread_id.xy] = g_textures[NonUniformResourceIndex(texture_index)].SampleLevel(g_sky_sampler, face_uv, 0.0f) * 0.75f;
 }
-

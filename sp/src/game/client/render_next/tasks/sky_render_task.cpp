@@ -36,7 +36,6 @@ void SkyRenderTask::UpdateBindings(RenderBackendResources const& backend_resourc
     descriptor_set_->Clear();
     descriptor_set_->BindBuffer(*backend_resources.inverse_view_proj_buffer, 0);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
-    descriptor_set_->BindBuffer(*gpu_scene.skybox_texture_ids_buffer, 1);
     descriptor_set_->BindSampler(*sky_sampler_, 0, 2);
     descriptor_set_->BindImage(*backend_resources.color_texture, 6);
 }
@@ -51,6 +50,8 @@ void SkyRenderTask::Execute(RenderTaskContext& context)
     TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kShaderReadWrite);
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
+    context.backend.cmd_buffer->SetRootConstants(context.gpu_scene.skybox_texture_ids.data(),
+        sizeof(uint32_t) * context.gpu_scene.skybox_texture_ids.size());
     context.backend.cmd_buffer->Dispatch((context.viewport_width + 15) / 16, (context.viewport_height + 15) / 16, 1);
     context.backend.cmd_buffer->StorageBarrier(context.backend_resources.color_texture);
 }
