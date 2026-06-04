@@ -15,7 +15,7 @@
 #include "iviewrender.h"
 #include "view_shared.h"
 #include "replay/ireplayscreenshotsystem.h"
-#include "render_new/render_new.h"
+#include "render_next/render_next.h"
 
 
 //-----------------------------------------------------------------------------
@@ -416,7 +416,7 @@ public:
 	virtual void		  SetCurrentlyDrawingEntity( C_BaseEntity *pEnt );
 
 	virtual bool		UpdateShadowDepthTexture( ITexture *pRenderTarget, ITexture *pDepthTexture, const CViewSetup &shadowView );
-	RenderNew *		GetRenderNew() const { return m_RenderNew; }
+	RenderNext *		GetRenderNext() const { return m_RenderNext; }
 
 	int GetBaseDrawFlags() { return m_BaseDrawFlags; }
 	virtual bool ShouldForceNoVis()  { return m_bForceNoVis; }
@@ -563,9 +563,10 @@ private:
 #endif
 
 #if 1
-	RenderNew* m_RenderNew;
+	RenderNext* m_RenderNext;
 #endif
 
 };
 
 #endif // VIEWRENDER_H
+

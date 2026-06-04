@@ -20,3 +20,4 @@ private:
     gpu::SamplerPtr texture_sampler_;
     gpu::SamplerPtr lightmap_sampler_;
 };
+

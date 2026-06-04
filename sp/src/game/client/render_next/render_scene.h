@@ -84,3 +84,4 @@ struct RenderSceneGpu
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts);
 };
+

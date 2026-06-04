@@ -1,27 +1,31 @@
-#include "render_new.h"
+#include "render_next.h"
 
-#ifdef SOURCE_SDK_RENDER_NEW
+#ifdef SOURCE_SDK_RENDER_NEXT
 
 #include "render_scene.h"
 #include "scene_builder.h"
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
 #include "tasks/render_graph.h"
+#include "tasks/sky_render_task.h"
 #include "tasks/draw_scene_task.h"
 #include "tasks/copy_depth_task.h"
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
+#include "movevars_shared.h"
 #include "cliententitylist.h"
 #include "icliententity.h"
+#include "convar.h"
 
 #include <cstring>
 
-class RenderImpl : public RenderNew
+class RenderImpl : public RenderNext
 {
 public:
     void Init() override;
     void LoadLevel(char const* level_name) override;
     void RenderView(ViewSetup const& view_setup) override;
+    void ReloadPipelines() override;
 
 private:
     void BuildCpuScene(char const* level_name);
@@ -36,6 +40,7 @@ private:
     RenderBackendContext backend_;
     RenderBackendResources backend_resources_;
     RenderGraph render_graph_;
+    SkyRenderTask sky_render_task_;
     DrawSceneTask draw_scene_task_;
     CopyDepthTask copy_depth_task_;
     RenderSceneCpu scene_;
@@ -76,13 +81,16 @@ void ComputeViewMatrices(ViewSetup const& view_setup, VMatrix* pWorldToView, VMa
 void RenderImpl::Init()
 {
     InitializeRenderBackend(__FILE__, backend_, backend_resources_, gpu_scene_);
-    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
-    copy_depth_task_.Initialize(backend_.device, backend_resources_);
     EnsureRenderCommandBuffer(backend_);
     gpu_scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
+    sky_render_task_.Initialize(backend_.device, backend_resources_, gpu_scene_);
+    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
+    copy_depth_task_.Initialize(backend_.device, backend_resources_);
+    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, sv_skyname.GetString());
     SubmitRenderCommandsAndWait(backend_);
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
     render_graph_.Reset();
+    render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_scene_task_);
     render_graph_.AddTask(copy_depth_task_);
 }
@@ -90,6 +98,8 @@ void RenderImpl::Init()
 void RenderImpl::LoadLevel(char const* level_name)
 {
     BuildCpuScene(level_name);
+    EnsureRenderCommandBuffer(backend_);
+    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, sv_skyname.GetString());
     UploadSceneToGpu();
 }
 
@@ -99,6 +109,27 @@ void RenderImpl::RenderView(ViewSetup const& view_setup)
     PrepareFrame(view_setup);
     DrawScene();
     FinalizeFrame();
+}
+
+void RenderImpl::ReloadPipelines()
+{
+    if (!backend_.device)
+    {
+        Warning("reloadpipelines: render backend is not initialized\n");
+        return;
+    }
+
+    gpu::PipelineReloadResult result = backend_.device->ReloadPipelines();
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+
+    if (result.success)
+    {
+        ConMsg("reloadpipelines: reloaded %u pipeline(s)\n", result.reloaded_count);
+    }
+    else
+    {
+        Warning("reloadpipelines: reloaded %u pipeline(s) with errors:\n%s\n", result.reloaded_count, result.error.c_str());
+    }
 }
 
 void RenderImpl::BuildCpuScene(char const* level_name)
@@ -125,17 +156,21 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
     VMatrix view_matrix, projection_matrix, view_projection_matrix;
     ComputeViewMatrices(view_setup, &view_matrix, &projection_matrix, &view_projection_matrix);
+    VMatrix inverse_view_projection_matrix;
+    MatrixInverseGeneral(view_projection_matrix, inverse_view_projection_matrix);
     MatrixTranspose(view_projection_matrix, view_projection_matrix);
+    MatrixTranspose(inverse_view_projection_matrix, inverse_view_projection_matrix);
 
     UpdateDynamicSceneTransforms();
 
     void* mapped_data = backend_resources_.view_proj_buffer->Map();
     std::memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));
     backend_resources_.view_proj_buffer->Unmap();
+    void* inverse_mapped_data = backend_resources_.inverse_view_proj_buffer->Map();
+    std::memcpy(inverse_mapped_data, inverse_view_projection_matrix.Base(), sizeof(VMatrix));
+    backend_resources_.inverse_view_proj_buffer->Unmap();
 
-    TransitionRenderImage(backend_, backend_resources_.color_texture, gpu::ImageLayout::kRenderTarget);
     TransitionRenderImage(backend_, backend_resources_.depth_texture, gpu::ImageLayout::kRenderTarget);
-    backend_.cmd_buffer->SetRenderTarget(backend_resources_.color_texture, backend_resources_.depth_texture);
 }
 
 void RenderImpl::DrawScene()
@@ -201,26 +236,33 @@ void RenderImpl::TryInitializeBrushEntities()
     UploadSceneToGpu();
 }
 
-RenderNew* GetRenderNewInstance()
+RenderNext* GetRenderNextInstance()
 {
     static RenderImpl instance;
     return &instance;
 }
 
+CON_COMMAND_F(reloadpipelines, "Reload render_next GPU pipelines.", FCVAR_CLIENTDLL)
+{
+    GetRenderNextInstance()->ReloadPipelines();
+}
+
 #else
 
-class RenderNull : public RenderNew
+class RenderNull : public RenderNext
 {
 public:
     void Init() override {}
     void LoadLevel(char const* level_name) override {}
     void RenderView(ViewSetup const& view_setup) override {}
+    void ReloadPipelines() override {}
 };
 
-RenderNew* GetRenderNewInstance()
+RenderNext* GetRenderNextInstance()
 {
     static RenderNull instance;
     return &instance;
 }
 
 #endif
+

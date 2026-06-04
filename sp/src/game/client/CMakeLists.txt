@@ -146,8 +146,8 @@ if(SOURCE_SDK_MAPBASE_RPC)
     target_link_libraries(client PRIVATE discord-rpc)
 endif()
 
-if(SOURCE_SDK_RENDER_NEW)
-    target_compile_definitions(client PRIVATE SOURCE_SDK_RENDER_NEW)
+if(SOURCE_SDK_RENDER_NEXT)
+    target_compile_definitions(client PRIVATE SOURCE_SDK_RENDER_NEXT)
     target_include_directories(client PRIVATE
         "${SOURCE_SDK_ROOT}/thirdparty/GpuApi/src/d3d12"
     )
@@ -178,3 +178,4 @@ if(SOURCE_SDK_RENDER_NEW)
         )
     endif()
 endif()
+

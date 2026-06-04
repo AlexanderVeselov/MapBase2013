@@ -326,8 +326,8 @@ void CViewRender::Init( void )
 #endif
 
 #if 1
-	m_RenderNew = GetRenderNewInstance();
-	m_RenderNew->Init();
+	m_RenderNext = GetRenderNextInstance();
+	m_RenderNext->Init();
 #endif
 }
 
@@ -355,7 +355,7 @@ void CViewRender::LevelInit( void )
 	g_pScreenSpaceEffects->InitScreenSpaceEffects( );
 
 #if 1
-	m_RenderNew->LoadLevel(engine->GetLevelName());
+	m_RenderNext->LoadLevel(engine->GetLevelName());
 #endif
 }
 
@@ -1427,4 +1427,5 @@ CON_COMMAND( getpos, "dump position and angles to the console" )
 	Warning( "%s %f %f %f;", pCommand1, vecOrigin.x, vecOrigin.y, vecOrigin.z );
 	Warning( "%s %f %f %f\n", pCommand2, angles.x, angles.y, angles.z );
 }
+
 

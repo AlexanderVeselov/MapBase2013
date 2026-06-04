@@ -1,6 +1,6 @@
 set(CLIENT_HL2_NO_PCH_SOURCES
-    "${SOURCE_SDK_ROOT}/game/client/render_new/bsp_loader.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/dx9_interop.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/bsp_loader.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/dx9_interop.cpp"
     "${SOURCE_SDK_ROOT}/public/bone_setup.cpp"
     "${SOURCE_SDK_ROOT}/public/client_class.cpp"
     "${SOURCE_SDK_ROOT}/public/collisionutils.cpp"
@@ -32,5 +32,6 @@ set(CLIENT_HL2_NO_PCH_SOURCES
     "${SOURCE_SDK_ROOT}/public/studio.cpp"
     "${SOURCE_SDK_ROOT}/public/vallocator.cpp"
     "${SOURCE_SDK_ROOT}/public/vgui_controls/vgui_controls.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/render_new.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/render_next.cpp"
 )
+

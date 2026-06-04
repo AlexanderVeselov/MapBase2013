@@ -50,13 +50,15 @@ struct ViewSetup
     //VMatrix m_ViewToProjection;
 };
 
-class RenderNew
+class RenderNext
 {
 public:
-    RenderNew() = default;
+    RenderNext() = default;
     virtual void Init() = 0;
     virtual void LoadLevel(char const* level_name) = 0;
     virtual void RenderView(ViewSetup const& view_setup) = 0;
+    virtual void ReloadPipelines() = 0;
 };
 
-RenderNew* GetRenderNewInstance();
+RenderNext* GetRenderNextInstance();
+

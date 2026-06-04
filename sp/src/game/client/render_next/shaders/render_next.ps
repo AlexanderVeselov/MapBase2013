@@ -36,7 +36,7 @@ float4 main(PSInput input) : SV_TARGET
 {
     float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
     float3 normal = normalize(input.normal);
-    float diffuse = 1.0f;//saturate(dot(normal, light));
+    float diffuse = 1.0f;//saturate(dot(normal, light)) + 0.1f;
     float4 albedo = g_textures[NonUniformResourceIndex(input.texture_index)].Sample(g_sampler, input.texcoord);
     float3 albedo_linear = SrgbToLinear(albedo.rgb);
     float3 lightmap_linear = g_lightmap.Sample(g_lightmap_sampler, input.lightmap_texcoord).rgb;
@@ -44,3 +44,4 @@ float4 main(PSInput input) : SV_TARGET
     float3 output_color = LinearToSrgb(direct_linear * lightmap_linear);
     return float4(output_color, albedo.a);
 }
+

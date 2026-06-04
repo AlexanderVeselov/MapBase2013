@@ -16,3 +16,4 @@ private:
     gpu::ComputePipelinePtr pipeline_;
     gpu::DescriptorSetPtr descriptor_set_;
 };
+

@@ -50,10 +50,11 @@ void TransitionImage(gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Ima
 }
 
 gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height, void const* data, size_t data_size)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height,
+    gpu::ImageFormat format, void const* data, size_t data_size)
 {
     gpu::ImagePtr image =
-        device->CreateImage(width, height, gpu::ImageFormat::kRGBA8_UNorm, gpu::ImageFlags::kShaderResource);
+        device->CreateImage(width, height, format, gpu::ImageFlags::kShaderResource);
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kCopyDst);
     cmd_buffer.UploadImage(image, data, data_size);
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kShaderRead);
@@ -180,6 +181,21 @@ bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels,
     return success;
 }
 
+gpu::ImagePtr LoadTextureImageInternal(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name)
+{
+    std::vector<uint8_t> rgba_pixels;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if (!LoadTextureRgba(texture_name, rgba_pixels, width, height))
+    {
+        return {};
+    }
+
+    return CreateTextureImage(device, cmd_buffer, image_layouts, width, height, gpu::ImageFormat::kRGBA8_UNorm,
+        rgba_pixels.data(), rgba_pixels.size());
+}
+
 void UploadVertices(gpu::DevicePtr const& device, std::vector<Vertex> const& vertices, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.vertex_count = static_cast<uint32_t>(vertices.size());
@@ -210,15 +226,14 @@ void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
         }
 
         std::string base_texture_name;
-        std::vector<uint8_t> rgba_pixels;
-        uint32_t width = 0;
-        uint32_t height = 0;
-
         gpu::ImagePtr texture_image = fallback_texture;
-        if (ResolveBaseTextureName(bsp_materials[material_index].material_name.c_str(), base_texture_name)
-            && LoadTextureRgba(base_texture_name.c_str(), rgba_pixels, width, height))
+        if (ResolveBaseTextureName(bsp_materials[material_index].material_name.c_str(), base_texture_name))
         {
-            texture_image = CreateTextureImage(device, cmd_buffer, image_layouts, width, height, rgba_pixels.data(), rgba_pixels.size());
+            gpu::ImagePtr loaded_texture = LoadTextureImageInternal(device, cmd_buffer, image_layouts, base_texture_name.c_str());
+            if (loaded_texture)
+            {
+                texture_image = std::move(loaded_texture);
+            }
         }
 
         out_gpu_scene.material_textures[material_index + 1] = texture_image;
@@ -232,6 +247,13 @@ void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
         }
     }
 }
+
+}
+
+gpu::ImagePtr LoadTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name)
+{
+    return LoadTextureImageInternal(device, cmd_buffer, image_layouts, texture_name);
 }
 
 void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
@@ -240,14 +262,16 @@ void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::C
     if (!fallback_texture)
     {
         std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
-        fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, fallback_pixels.data(), fallback_pixels.size());
+        fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, gpu::ImageFormat::kRGBA8_UNorm,
+            fallback_pixels.data(), fallback_pixels.size());
     }
 
     if (!fallback_lightmap_texture)
     {
         std::array<uint8_t, 4> fallback_lightmap_pixels = {255, 255, 255, 255};
         fallback_lightmap_texture =
-            CreateTextureImage(device, cmd_buffer, image_layouts, 1, 1, fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
+            CreateTextureImage(device, cmd_buffer, image_layouts, 1, 1, gpu::ImageFormat::kRGBA8_UNorm,
+                fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
     }
 }
 
@@ -256,11 +280,14 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
 
-    if (!scene.lightmap_atlas.rgba_pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
+    if (!scene.lightmap_atlas.pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
     {
+        gpu::ImageFormat lightmap_format = scene.lightmap_atlas.format == BspLightmapAtlas::Format::kRGBA32Float
+            ? gpu::ImageFormat::kRGBA32_Float
+            : gpu::ImageFormat::kRGBA8_UNorm;
         out_gpu_scene.lightmap_texture = CreateTextureImage(device, cmd_buffer, image_layouts,
             static_cast<uint32_t>(scene.lightmap_atlas.width), static_cast<uint32_t>(scene.lightmap_atlas.height),
-            scene.lightmap_atlas.rgba_pixels.data(), scene.lightmap_atlas.rgba_pixels.size());
+            lightmap_format, scene.lightmap_atlas.pixels.data(), scene.lightmap_atlas.pixels.size());
     }
     else
     {
@@ -277,3 +304,4 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, upload_vertices, out_gpu_scene.fallback_texture, out_gpu_scene);
     UploadVertices(device, upload_vertices, out_gpu_scene);
 }
+

@@ -23,3 +23,4 @@ void RenderGraph::Execute(RenderTaskContext& context) const
         task->Execute(context);
     }
 }
+

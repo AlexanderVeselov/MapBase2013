@@ -130,25 +130,28 @@ $Project "Client (Episodic)"
 
 		$Folder	"Render New"
 		{
-			$File "render_new\render_new.cpp"
-			$File "render_new\render_new.h"
-			$File "render_new\gpu_scene_resources.cpp"
-			$File "render_new\gpu_scene_resources.h"
-			$File "render_new\render_backend.cpp"
-			$File "render_new\render_backend.h"
-			$File "render_new\render_scene.h"
-			$File "render_new\scene_builder.cpp"
-			$File "render_new\scene_builder.h"
+			$File "render_next\render_next.cpp"
+			$File "render_next\render_next.h"
+			$File "render_next\gpu_scene_resources.cpp"
+			$File "render_next\gpu_scene_resources.h"
+			$File "render_next\render_backend.cpp"
+			$File "render_next\render_backend.h"
+			$File "render_next\render_scene.h"
+			$File "render_next\scene_builder.cpp"
+			$File "render_next\scene_builder.h"
 			$Folder "Tasks"
 			{
-				$File "render_new\tasks\copy_depth_task.cpp"
-				$File "render_new\tasks\copy_depth_task.h"
-				$File "render_new\tasks\draw_scene_task.cpp"
-				$File "render_new\tasks\draw_scene_task.h"
-				$File "render_new\tasks\render_graph.cpp"
-				$File "render_new\tasks\render_graph.h"
+				$File "render_next\tasks\copy_depth_task.cpp"
+				$File "render_next\tasks\copy_depth_task.h"
+				$File "render_next\tasks\draw_scene_task.cpp"
+				$File "render_next\tasks\draw_scene_task.h"
+				$File "render_next\tasks\render_graph.cpp"
+				$File "render_next\tasks\render_graph.h"
+				$File "render_next\tasks\sky_render_task.cpp"
+				$File "render_next\tasks\sky_render_task.h"
 			}
 		}
 	}
 	
 }
+

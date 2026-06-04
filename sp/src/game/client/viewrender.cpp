@@ -4437,7 +4437,7 @@ static void SetupBonesOnBaseAnimating( C_BaseAnimating *&pBaseAnimating )
 
 static void DrawOpaqueRenderables_DrawBrushModels( CClientRenderablesList::CEntry *pEntitiesBegin, CClientRenderablesList::CEntry *pEntitiesEnd, ERenderDepthMode DepthMode )
 {
-#ifdef SOURCE_SDK_RENDER_NEW
+#ifdef SOURCE_SDK_RENDER_NEXT
 	return;
 #endif
 
@@ -4450,7 +4450,7 @@ static void DrawOpaqueRenderables_DrawBrushModels( CClientRenderablesList::CEntr
 
 static void DrawOpaqueRenderables_DrawStaticProps( CClientRenderablesList::CEntry *pEntitiesBegin, CClientRenderablesList::CEntry *pEntitiesEnd, ERenderDepthMode DepthMode )
 {
-#ifdef SOURCE_SDK_RENDER_NEW
+#ifdef SOURCE_SDK_RENDER_NEXT
 	return;
 #endif
 
@@ -6089,7 +6089,7 @@ void CBaseWorldView::DrawExecute( float waterHeight, view_id_t viewID, float wat
 	{
 		DrawWorld( waterZAdjust );
 
-		if ( viewID == VIEW_MAIN && m_pMainView->GetRenderNew() )
+		if ( viewID == VIEW_MAIN && m_pMainView->GetRenderNext() )
 		{
 			ViewSetup view_setup = {};
 			view_setup.fov = fov;
@@ -6098,7 +6098,7 @@ void CBaseWorldView::DrawExecute( float waterHeight, view_id_t viewID, float wat
 			view_setup.zNear = zNear;
 			view_setup.zFar = zFar;
 			view_setup.m_flAspectRatio = m_flAspectRatio;
-			m_pMainView->GetRenderNew()->RenderView( view_setup );
+			m_pMainView->GetRenderNext()->RenderView( view_setup );
 		}
 
 		DrawOpaqueRenderables( DepthMode );
@@ -7011,3 +7011,4 @@ void CRefractiveGlassView::Draw()
 	pRenderContext->ClearColor4ub( 0, 0, 0, 255 );
 	pRenderContext->Flush();
 }
+

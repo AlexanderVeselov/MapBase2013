@@ -36,6 +36,8 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
 
     resources.view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
         gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
+    resources.inverse_view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
 
     SceneTransform identity_transform = MakeIdentitySceneTransform();
     gpu_scene.scene_transform_buffer = context.device->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
@@ -77,3 +79,4 @@ void SubmitRenderCommandsAndWait(RenderBackendContext& context)
     context.graphics_queue->Submit(std::move(context.cmd_buffer));
     context.graphics_queue->WaitIdle();
 }
+

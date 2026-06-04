@@ -81,12 +81,10 @@ PackedLightmapRect PackLightmapRect(int width, int height, int max_row_width, in
     return rect;
 }
 
-uint8_t EncodeLightmapComponent(const ColorRGBExp32& lightmap_color, int component_index)
+float DecodeLightmapComponent(const ColorRGBExp32& lightmap_color, int component_index)
 {
     int component = component_index == 0 ? lightmap_color.r : (component_index == 1 ? lightmap_color.g : lightmap_color.b);
-    float linear = TexLightToLinear(component, lightmap_color.exponent);
-    linear = (std::clamp)(linear, 0.0f, 1.0f);
-    return static_cast<uint8_t>(linear * 255.0f + 0.5f);
+    return TexLightToLinear(component, lightmap_color.exponent);
 }
 
 void WriteAtlasPixel(std::vector<uint8_t>& atlas_pixels, int atlas_width, int x, int y, uint8_t r, uint8_t g, uint8_t b)
@@ -96,6 +94,15 @@ void WriteAtlasPixel(std::vector<uint8_t>& atlas_pixels, int atlas_width, int x,
     atlas_pixels[pixel_index + 1] = g;
     atlas_pixels[pixel_index + 2] = b;
     atlas_pixels[pixel_index + 3] = 255;
+}
+
+void WriteAtlasPixel(std::vector<float>& atlas_pixels, int atlas_width, int x, int y, float r, float g, float b)
+{
+    size_t pixel_index = static_cast<size_t>(y * atlas_width + x) * 4;
+    atlas_pixels[pixel_index + 0] = r;
+    atlas_pixels[pixel_index + 1] = g;
+    atlas_pixels[pixel_index + 2] = b;
+    atlas_pixels[pixel_index + 3] = 1.0f;
 }
 
 char const* GetTexdataString(std::vector<int32_t> const& string_table, std::vector<char> const& string_data,
@@ -196,7 +203,8 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
 
     out_lightmap_atlas.width = 1;
     out_lightmap_atlas.height = 1;
-    out_lightmap_atlas.rgba_pixels = {255, 255, 255, 255};
+    out_lightmap_atlas.format = BspLightmapAtlas::Format::kRGBA8;
+    out_lightmap_atlas.pixels = {255, 255, 255, 255};
 
     if (!f.is_open())
         return;
@@ -225,6 +233,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     std::vector<CDispVert> dispverts;
     std::vector<CDispTri> disptris;
     std::vector<ColorRGBExp32> lighting;
+    std::vector<ColorRGBExp32> lighting_hdr;
     std::vector<int32_t> texdata_string_table;
     std::vector<char> texdata_string_data;
 
@@ -239,8 +248,12 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     if (!ReadLump(f, hdr.lumps[LUMP_DISP_VERTS], dispverts)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_DISP_TRIS], disptris))  return;
     if (!ReadLump(f, hdr.lumps[LUMP_LIGHTING], lighting))   return;
+    if (!ReadLump(f, hdr.lumps[LUMP_LIGHTING_HDR], lighting_hdr)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_TABLE], texdata_string_table)) return;
     if (!ReadLump(f, hdr.lumps[LUMP_TEXDATA_STRING_DATA], texdata_string_data)) return;
+
+    std::vector<ColorRGBExp32> const& active_lighting = lighting_hdr.empty() ? lighting : lighting_hdr;
+    bool const use_hdr_lightmaps = !lighting_hdr.empty();
 
     std::unordered_map<std::string, uint32_t> material_indices;
     std::vector<PackedLightmapRect> face_lightmap_rects(faces.size());
@@ -271,7 +284,16 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
             atlas_cursor_x, atlas_cursor_y, atlas_row_height, atlas_width, atlas_height);
     }
 
-    std::vector<uint8_t> atlas_pixels(static_cast<size_t>(atlas_width * atlas_height) * 4, 255);
+    std::vector<uint8_t> atlas_pixels_ldr;
+    std::vector<float> atlas_pixels_hdr;
+    if (use_hdr_lightmaps)
+    {
+        atlas_pixels_hdr.resize(static_cast<size_t>(atlas_width * atlas_height) * 4, 1.0f);
+    }
+    else
+    {
+        atlas_pixels_ldr.resize(static_cast<size_t>(atlas_width * atlas_height) * 4, 255);
+    }
     for (size_t face_index = 0; face_index < faces.size(); ++face_index)
     {
         PackedLightmapRect const& packed_rect = face_lightmap_rects[face_index];
@@ -285,7 +307,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         int lightmap_height = face.m_LightmapTextureSizeInLuxels[1] + 1;
         size_t sample_offset = static_cast<size_t>(face.lightofs) / sizeof(ColorRGBExp32);
         size_t sample_count = static_cast<size_t>(lightmap_width * lightmap_height);
-        if (sample_offset + sample_count > lighting.size())
+        if (sample_offset + sample_count > active_lighting.size())
         {
             continue;
         }
@@ -294,11 +316,21 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         {
             for (int x = 0; x < lightmap_width; ++x)
             {
-                ColorRGBExp32 const& lightmap_color = lighting[sample_offset + static_cast<size_t>(y * lightmap_width + x)];
-                uint8_t r = EncodeLightmapComponent(lightmap_color, 0);
-                uint8_t g = EncodeLightmapComponent(lightmap_color, 1);
-                uint8_t b = EncodeLightmapComponent(lightmap_color, 2);
-                WriteAtlasPixel(atlas_pixels, atlas_width, packed_rect.x + 1 + x, packed_rect.y + 1 + y, r, g, b);
+                ColorRGBExp32 const& lightmap_color = active_lighting[sample_offset + static_cast<size_t>(y * lightmap_width + x)];
+                float r = DecodeLightmapComponent(lightmap_color, 0);
+                float g = DecodeLightmapComponent(lightmap_color, 1);
+                float b = DecodeLightmapComponent(lightmap_color, 2);
+                if (use_hdr_lightmaps)
+                {
+                    WriteAtlasPixel(atlas_pixels_hdr, atlas_width, packed_rect.x + 1 + x, packed_rect.y + 1 + y, r, g, b);
+                }
+                else
+                {
+                    WriteAtlasPixel(atlas_pixels_ldr, atlas_width, packed_rect.x + 1 + x, packed_rect.y + 1 + y,
+                        static_cast<uint8_t>((std::clamp)(r, 0.0f, 1.0f) * 255.0f + 0.5f),
+                        static_cast<uint8_t>((std::clamp)(g, 0.0f, 1.0f) * 255.0f + 0.5f),
+                        static_cast<uint8_t>((std::clamp)(b, 0.0f, 1.0f) * 255.0f + 0.5f));
+                }
             }
         }
 
@@ -306,26 +338,55 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         {
             size_t top_index = static_cast<size_t>((packed_rect.y + 1) * atlas_width + (packed_rect.x + 1 + x)) * 4;
             size_t bottom_index = static_cast<size_t>((packed_rect.y + lightmap_height) * atlas_width + (packed_rect.x + 1 + x)) * 4;
-            WriteAtlasPixel(atlas_pixels, atlas_width, packed_rect.x + 1 + x, packed_rect.y,
-                atlas_pixels[top_index + 0], atlas_pixels[top_index + 1], atlas_pixels[top_index + 2]);
-            WriteAtlasPixel(atlas_pixels, atlas_width, packed_rect.x + 1 + x, packed_rect.y + lightmap_height + 1,
-                atlas_pixels[bottom_index + 0], atlas_pixels[bottom_index + 1], atlas_pixels[bottom_index + 2]);
+            if (use_hdr_lightmaps)
+            {
+                WriteAtlasPixel(atlas_pixels_hdr, atlas_width, packed_rect.x + 1 + x, packed_rect.y,
+                    atlas_pixels_hdr[top_index + 0], atlas_pixels_hdr[top_index + 1], atlas_pixels_hdr[top_index + 2]);
+                WriteAtlasPixel(atlas_pixels_hdr, atlas_width, packed_rect.x + 1 + x, packed_rect.y + lightmap_height + 1,
+                    atlas_pixels_hdr[bottom_index + 0], atlas_pixels_hdr[bottom_index + 1], atlas_pixels_hdr[bottom_index + 2]);
+            }
+            else
+            {
+                WriteAtlasPixel(atlas_pixels_ldr, atlas_width, packed_rect.x + 1 + x, packed_rect.y,
+                    atlas_pixels_ldr[top_index + 0], atlas_pixels_ldr[top_index + 1], atlas_pixels_ldr[top_index + 2]);
+                WriteAtlasPixel(atlas_pixels_ldr, atlas_width, packed_rect.x + 1 + x, packed_rect.y + lightmap_height + 1,
+                    atlas_pixels_ldr[bottom_index + 0], atlas_pixels_ldr[bottom_index + 1], atlas_pixels_ldr[bottom_index + 2]);
+            }
         }
 
         for (int y = 0; y < lightmap_height + 2; ++y)
         {
             size_t left_index = static_cast<size_t>((packed_rect.y + y) * atlas_width + (packed_rect.x + 1)) * 4;
             size_t right_index = static_cast<size_t>((packed_rect.y + y) * atlas_width + (packed_rect.x + lightmap_width)) * 4;
-            WriteAtlasPixel(atlas_pixels, atlas_width, packed_rect.x, packed_rect.y + y,
-                atlas_pixels[left_index + 0], atlas_pixels[left_index + 1], atlas_pixels[left_index + 2]);
-            WriteAtlasPixel(atlas_pixels, atlas_width, packed_rect.x + lightmap_width + 1, packed_rect.y + y,
-                atlas_pixels[right_index + 0], atlas_pixels[right_index + 1], atlas_pixels[right_index + 2]);
+            if (use_hdr_lightmaps)
+            {
+                WriteAtlasPixel(atlas_pixels_hdr, atlas_width, packed_rect.x, packed_rect.y + y,
+                    atlas_pixels_hdr[left_index + 0], atlas_pixels_hdr[left_index + 1], atlas_pixels_hdr[left_index + 2]);
+                WriteAtlasPixel(atlas_pixels_hdr, atlas_width, packed_rect.x + lightmap_width + 1, packed_rect.y + y,
+                    atlas_pixels_hdr[right_index + 0], atlas_pixels_hdr[right_index + 1], atlas_pixels_hdr[right_index + 2]);
+            }
+            else
+            {
+                WriteAtlasPixel(atlas_pixels_ldr, atlas_width, packed_rect.x, packed_rect.y + y,
+                    atlas_pixels_ldr[left_index + 0], atlas_pixels_ldr[left_index + 1], atlas_pixels_ldr[left_index + 2]);
+                WriteAtlasPixel(atlas_pixels_ldr, atlas_width, packed_rect.x + lightmap_width + 1, packed_rect.y + y,
+                    atlas_pixels_ldr[right_index + 0], atlas_pixels_ldr[right_index + 1], atlas_pixels_ldr[right_index + 2]);
+            }
         }
     }
 
     out_lightmap_atlas.width = atlas_width;
     out_lightmap_atlas.height = atlas_height;
-    out_lightmap_atlas.rgba_pixels = std::move(atlas_pixels);
+    out_lightmap_atlas.format = use_hdr_lightmaps ? BspLightmapAtlas::Format::kRGBA32Float : BspLightmapAtlas::Format::kRGBA8;
+    if (use_hdr_lightmaps)
+    {
+        out_lightmap_atlas.pixels.resize(atlas_pixels_hdr.size() * sizeof(float));
+        std::memcpy(out_lightmap_atlas.pixels.data(), atlas_pixels_hdr.data(), out_lightmap_atlas.pixels.size());
+    }
+    else
+    {
+        out_lightmap_atlas.pixels = std::move(atlas_pixels_ldr);
+    }
 
     auto get_texture_index = [&](std::string const& material_name, dtexdata_t const& face_texdata)
     {
@@ -869,3 +930,4 @@ void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_
         }
     }
 }
+

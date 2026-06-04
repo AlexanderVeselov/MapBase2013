@@ -32,3 +32,4 @@ public:
 private:
     std::vector<RenderTask*> tasks_;
 };
+

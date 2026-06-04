@@ -243,7 +243,7 @@ void AppendStaticPropTriangles(char const* level_name, std::vector<Vertex>& out_
         mdlcache->UnlockStudioHdr(mdl_handle);
     }
 
-    Msg("render_new: static props instances=%d rendered=%d triangles=%d\n",
+    Msg("render_next: static props instances=%d rendered=%d triangles=%d\n",
         static_props.size(), appended_prop_count, appended_triangle_count);
 }
 }
@@ -365,11 +365,11 @@ void InitializeBrushEntities(RenderSceneCpu& scene)
 
         if (debug_logged_entities < 8)
         {
-            Msg("render_new brush[%d]: ent=%d model=%s submodel=%d transform=%u abs_origin=(%.2f %.2f %.2f) abs_angles=(%.2f %.2f %.2f)\n",
+            Msg("render_next brush[%d]: ent=%d model=%s submodel=%d transform=%u abs_origin=(%.2f %.2f %.2f) abs_angles=(%.2f %.2f %.2f)\n",
                 debug_logged_entities, entity_index, model_name ? model_name : "<null>", submodel_index, transform_index,
                 entity->GetAbsOrigin().x, entity->GetAbsOrigin().y, entity->GetAbsOrigin().z,
                 entity->GetAbsAngles().x, entity->GetAbsAngles().y, entity->GetAbsAngles().z);
-            Msg("render_new brush[%d]: bounds local=(%.2f %.2f %.2f)-(%.2f %.2f %.2f)\n",
+            Msg("render_next brush[%d]: bounds local=(%.2f %.2f %.2f)-(%.2f %.2f %.2f)\n",
                 debug_logged_entities,
                 bounds_before_mins.x, bounds_before_mins.y, bounds_before_mins.z,
                 bounds_before_maxs.x, bounds_before_maxs.y, bounds_before_maxs.z);
@@ -377,7 +377,7 @@ void InitializeBrushEntities(RenderSceneCpu& scene)
         }
     }
 
-    Msg("render_new: brush entities rendered=%d submodels=%d\n", rendered_brush_entities, scene.brush_submodels.size());
+    Msg("render_next: brush entities rendered=%d submodels=%d\n", rendered_brush_entities, scene.brush_submodels.size());
 
     if (rebuilt_vertices.size() == scene.base_vertices.size())
     {
@@ -389,3 +389,4 @@ void InitializeBrushEntities(RenderSceneCpu& scene)
     scene.brush_entities = std::move(brush_entities);
     scene.brush_entities_initialized = true;
 }
+

@@ -3,18 +3,19 @@ set(CLIENT_MP3_SOURCES
 )
 
 set(CLIENT_RENDER_NEW_FACADE_SOURCES
-    "${SOURCE_SDK_ROOT}/game/client/render_new/render_new.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/render_next.cpp"
 )
 
 set(CLIENT_RENDER_NEW_SOURCES
-    "${SOURCE_SDK_ROOT}/game/client/render_new/bsp_loader.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/copy_depth_task.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/dx9_interop.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/draw_scene_task.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/gpu_scene_resources.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/render_backend.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/tasks/render_graph.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_new/scene_builder.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/bsp_loader.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/copy_depth_task.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/dx9_interop.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/draw_scene_task.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/gpu_scene_resources.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/render_backend.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/render_graph.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/scene_builder.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/sky_render_task.cpp"
 )
 
 set(CLIENT_REPLAY_SOURCES
@@ -597,7 +598,7 @@ set(CLIENT_EPISODIC_SOURCES
     ${CLIENT_RENDER_NEW_FACADE_SOURCES}
 )
 
-if(SOURCE_SDK_RENDER_NEW)
+if(SOURCE_SDK_RENDER_NEXT)
     list(APPEND CLIENT_EPISODIC_SOURCES
         ${CLIENT_RENDER_NEW_SOURCES}
     )
@@ -639,3 +640,4 @@ endif()
 list(APPEND CLIENT_EPISODIC_SOURCES
     ${CLIENT_TOOLFRAMEWORK_SOURCES}
 )
+

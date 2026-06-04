@@ -295,7 +295,7 @@ void InitSharedTextures(gpu::Device& device, gpu::ImagePtr& color_tex, gpu::Imag
     CheckResult(backbuffer->GetDesc(&backbuffer_desc));
 
     color_tex = CreateSharedImage(device, backbuffer_desc.Width, backbuffer_desc.Height, gpu::ImageFormat::kBGRA8_UNorm,
-        gpu::ImageFlags::kRenderTarget, &g_d3d9_shared_color);
+        gpu::ImageFlags::kRenderTarget | gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kStorage, &g_d3d9_shared_color);
 
     depth_tex = CreateSharedImage(device, backbuffer_desc.Width, backbuffer_desc.Height, gpu::ImageFormat::kBGRA8_UNorm,
         gpu::ImageFlags::kStorage | gpu::ImageFlags::kShaderResource, &g_d3d9_shared_depth);
@@ -317,3 +317,4 @@ void DX9_RenderFrame()
     CheckResult(g_d3d9_device->StretchRect(d3d9_shared_color_surface, nullptr, pBackBuffer, nullptr, D3DTEXF_NONE));
     WriteDepthFromSharedTexture(g_d3d9_shared_depth);
 }
+

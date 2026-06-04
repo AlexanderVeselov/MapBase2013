@@ -23,3 +23,4 @@ void CopyDepthTask::Execute(RenderTaskContext& context)
     context.backend.cmd_buffer->Dispatch((context.viewport_width + 15) / 16, (context.viewport_height + 15) / 16, 1);
     context.backend.cmd_buffer->StorageBarrier(context.backend_resources.shared_depth_texture);
 }
+

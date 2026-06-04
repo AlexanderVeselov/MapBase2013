@@ -13,8 +13,8 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     (void)gpu_scene;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
-    pipeline_desc.vs_filename = "render_new.vs";
-    pipeline_desc.ps_filename = "render_new.ps";
+    pipeline_desc.vs_filename = "render_next.vs";
+    pipeline_desc.ps_filename = "render_next.ps";
     pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm};
     pipeline_desc.depth_enabled = true;
     pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
@@ -64,10 +64,13 @@ char const* DrawSceneTask::GetName() const
 
 void DrawSceneTask::Execute(RenderTaskContext& context)
 {
-    context.backend.cmd_buffer->ClearImage(context.backend_resources.color_texture, 0.0f, 0.5f, 0.5f, 1.0f);
+    TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kRenderTarget);
+    TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
+    context.backend.cmd_buffer->SetRenderTarget(context.backend_resources.color_texture, context.backend_resources.depth_texture);
     context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
     context.backend.cmd_buffer->SetVertexBuffer(context.gpu_scene.vertex_buffer, sizeof(Vertex));
     context.backend.cmd_buffer->Draw(context.gpu_scene.vertex_count);
 }
+

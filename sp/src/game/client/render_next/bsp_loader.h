@@ -25,9 +25,16 @@ struct BspMaterial
 
 struct BspLightmapAtlas
 {
+    enum class Format
+    {
+        kRGBA8,
+        kRGBA32Float
+    };
+
     int width = 1;
     int height = 1;
-    std::vector<uint8_t> rgba_pixels;
+    Format format = Format::kRGBA8;
+    std::vector<uint8_t> pixels;
 };
 
 struct StaticPropInstance
@@ -48,3 +55,4 @@ struct BrushSubmodel
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
     BspLightmapAtlas& out_lightmap_atlas, std::vector<BrushSubmodel>& out_brush_submodels);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);
+
