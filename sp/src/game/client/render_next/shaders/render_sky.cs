@@ -3,7 +3,10 @@ cbuffer SkyCamera : register(b0)
     float4x4 g_inverse_view_proj;
 };
 
-Texture2D g_sky_faces[6] : register(t0, space1);
+static const uint RENDER_NEXT_MAX_TEXTURES = 512;
+
+Texture2D g_textures[RENDER_NEXT_MAX_TEXTURES] : register(t0, space1);
+StructuredBuffer<uint> g_sky_texture_ids : register(t1);
 SamplerState g_sky_sampler : register(s0, space2);
 RWTexture2D<float4> g_output_tex : register(u6);
 
@@ -83,6 +86,7 @@ void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
 
     uint face_index = SelectFace(direction);
     float2 face_uv = saturate(ComputeFaceUv(direction, face_index));
-    g_output_tex[dispatch_thread_id.xy] = g_sky_faces[face_index].SampleLevel(g_sky_sampler, face_uv, 0.0f) * 0.75f;
+    uint texture_index = g_sky_texture_ids[face_index];
+    g_output_tex[dispatch_thread_id.xy] = g_textures[NonUniformResourceIndex(texture_index)].SampleLevel(g_sky_sampler, face_uv, 0.0f) * 0.75f;
 }
 

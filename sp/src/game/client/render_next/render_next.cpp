@@ -15,6 +15,8 @@
 #include "convar.h"
 
 #include <cstring>
+#include <array>
+#include <string>
 
 class RenderImpl : public RenderNext
 {
@@ -27,6 +29,7 @@ public:
 private:
     void BuildCpuScene(char const* level_name);
     void UploadSceneToGpu();
+    void UploadSkyboxTextures();
     void PrepareFrame(ViewSetup const& view_setup);
     void DrawScene();
     void FinalizeFrame();
@@ -85,9 +88,10 @@ void RenderImpl::Init()
     sky_render_task_.Initialize(backend_.device, backend_resources_, gpu_scene_);
     draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
-    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, engine_adapter_.GetSkyName());
+    UploadSkyboxTextures();
     SubmitRenderCommandsAndWait(backend_);
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_);
     render_graph_.Reset();
     render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_scene_task_);
@@ -98,7 +102,6 @@ void RenderImpl::LoadLevel(char const* level_name)
 {
     BuildCpuScene(level_name);
     EnsureRenderCommandBuffer(backend_);
-    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, engine_adapter_.GetSkyName());
     UploadSceneToGpu();
 }
 
@@ -140,8 +143,17 @@ void RenderImpl::UploadSceneToGpu()
 {
     EnsureRenderCommandBuffer(backend_);
     UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, gpu_scene_);
+    UploadSkyboxTextures();
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_);
     SubmitRenderCommandsAndWait(backend_);
+}
+
+void RenderImpl::UploadSkyboxTextures()
+{
+    std::array<std::string, 6> skybox_texture_names;
+    engine_adapter_.GetSkyboxTextureNames(skybox_texture_names);
+    UploadSkyboxTexturesToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, skybox_texture_names, gpu_scene_);
 }
 
 void RenderImpl::PrepareFrame(ViewSetup const& view_setup)

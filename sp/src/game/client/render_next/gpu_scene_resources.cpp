@@ -288,6 +288,66 @@ void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
         std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
         scene_instance_buffer->Unmap();
     }
+
+    if (!skybox_texture_ids_buffer)
+    {
+        std::array<uint32_t, 6> fallback_skybox_texture_ids = {};
+        skybox_texture_ids_buffer = device->CreateBuffer(sizeof(uint32_t) * fallback_skybox_texture_ids.size(), sizeof(uint32_t),
+            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+        void* skybox_texture_ids_data = skybox_texture_ids_buffer->Map();
+        std::memcpy(skybox_texture_ids_data, fallback_skybox_texture_ids.data(), sizeof(uint32_t) * fallback_skybox_texture_ids.size());
+        skybox_texture_ids_buffer->Unmap();
+    }
+}
+
+void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
+    RenderSceneGpu& out_gpu_scene)
+{
+    out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
+    out_gpu_scene.EnsureFallbackSceneBuffers(device);
+
+    if (out_gpu_scene.material_textures.empty())
+    {
+        out_gpu_scene.material_textures.push_back(out_gpu_scene.fallback_texture);
+    }
+    else
+    {
+        out_gpu_scene.material_textures[0] = out_gpu_scene.fallback_texture;
+    }
+
+    out_gpu_scene.skybox_texture_ids.fill(0);
+    for (size_t face_index = 0; face_index < skybox_texture_names.size(); ++face_index)
+    {
+        if (out_gpu_scene.material_textures.size() >= kMaxMaterialTextures)
+        {
+            out_gpu_scene.skybox_texture_ids[face_index] = 0;
+            continue;
+        }
+
+        gpu::ImagePtr sky_face = out_gpu_scene.fallback_texture;
+        if (!skybox_texture_names[face_index].empty())
+        {
+            gpu::ImagePtr loaded_texture = LoadTextureImageInternal(device, cmd_buffer, image_layouts, skybox_texture_names[face_index].c_str());
+            if (loaded_texture)
+            {
+                sky_face = std::move(loaded_texture);
+            }
+        }
+
+        out_gpu_scene.skybox_texture_ids[face_index] = static_cast<uint32_t>(out_gpu_scene.material_textures.size());
+        out_gpu_scene.material_textures.push_back(std::move(sky_face));
+    }
+
+    if (!out_gpu_scene.skybox_texture_ids_buffer)
+    {
+        out_gpu_scene.skybox_texture_ids_buffer = device->CreateBuffer(sizeof(uint32_t) * out_gpu_scene.skybox_texture_ids.size(), sizeof(uint32_t),
+            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+    }
+
+    void* skybox_texture_ids_data = out_gpu_scene.skybox_texture_ids_buffer->Map();
+    std::memcpy(skybox_texture_ids_data, out_gpu_scene.skybox_texture_ids.data(), sizeof(uint32_t) * out_gpu_scene.skybox_texture_ids.size());
+    out_gpu_scene.skybox_texture_ids_buffer->Unmap();
 }
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
@@ -348,4 +408,3 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, out_gpu_scene.fallback_texture, out_gpu_scene);
     UploadVertices(device, upload_vertices, out_gpu_scene);
 }
-

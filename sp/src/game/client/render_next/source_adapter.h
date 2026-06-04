@@ -10,6 +10,7 @@ class SourceAdapter final : public EngineAdapter
 public:
     char const* GetLevelName() const override;
     char const* GetSkyName() const override;
+    void GetSkyboxTextureNames(std::array<std::string, 6>& out_texture_names) const override;
 
     void BuildWorldScene(char const* level_name, RenderSceneCpu& out_scene) override;
     void InitializeBrushEntities(RenderSceneCpu& scene) override;

@@ -7,6 +7,7 @@
 #include "gpu_image.hpp"
 
 #include <cstdint>
+#include <array>
 #include <unordered_map>
 #include <vector>
 
@@ -74,10 +75,12 @@ struct RenderSceneGpu
     gpu::BufferPtr vertex_buffer;
     gpu::BufferPtr scene_transform_buffer;
     gpu::BufferPtr scene_instance_buffer;
+    gpu::BufferPtr skybox_texture_ids_buffer;
     gpu::ImagePtr fallback_texture;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
     std::vector<gpu::ImagePtr> material_textures;
+    std::array<uint32_t, 6> skybox_texture_ids = {};
     uint32_t vertex_count = 0;
 
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
