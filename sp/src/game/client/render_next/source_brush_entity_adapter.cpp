@@ -134,7 +134,7 @@ void SourceBrushEntityAdapter::UpdateDynamicSceneTransforms(RenderSceneCpu& scen
         }
 
         IClientEntity* entity = cl_entitylist->GetClientEntity(binding.entity_index);
-        if (!entity)
+        //if (!entity)
         {
             scene.transforms[binding.transform_index] = MakeIdentitySceneTransform();
             continue;
