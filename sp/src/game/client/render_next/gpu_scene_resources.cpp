@@ -211,14 +211,14 @@ void UploadVertices(gpu::DevicePtr const& device, std::vector<Vertex> const& ver
 }
 
 void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::vector<BspMaterial> const& bsp_materials,
-    std::vector<Vertex>& vertices, gpu::ImagePtr const& fallback_texture, RenderSceneGpu& out_gpu_scene)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::vector<RenderMaterial> const& scene_materials,
+    gpu::ImagePtr const& fallback_texture, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.material_textures.clear();
-    out_gpu_scene.material_textures.resize(bsp_materials.size() + 1);
+    out_gpu_scene.material_textures.resize(scene_materials.size() + 1);
     out_gpu_scene.material_textures[0] = fallback_texture;
 
-    for (size_t material_index = 0; material_index < bsp_materials.size(); ++material_index)
+    for (size_t material_index = 0; material_index < scene_materials.size(); ++material_index)
     {
         if (material_index + 1 >= kMaxMaterialTextures)
         {
@@ -227,7 +227,7 @@ void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
 
         std::string base_texture_name;
         gpu::ImagePtr texture_image = fallback_texture;
-        if (ResolveBaseTextureName(bsp_materials[material_index].material_name.c_str(), base_texture_name))
+        if (ResolveBaseTextureName(scene_materials[material_index].material_name.c_str(), base_texture_name))
         {
             gpu::ImagePtr loaded_texture = LoadTextureImageInternal(device, cmd_buffer, image_layouts, base_texture_name.c_str());
             if (loaded_texture)
@@ -237,14 +237,6 @@ void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
         }
 
         out_gpu_scene.material_textures[material_index + 1] = texture_image;
-    }
-
-    for (Vertex& vertex : vertices)
-    {
-        if (vertex.texture_index >= kMaxMaterialTextures || vertex.texture_index >= out_gpu_scene.material_textures.size())
-        {
-            vertex.texture_index = 0;
-        }
     }
 }
 
@@ -275,14 +267,38 @@ void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::C
     }
 }
 
+void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
+{
+    if (!scene_transform_buffer)
+    {
+        SceneTransform identity_transform = MakeIdentitySceneTransform();
+        scene_transform_buffer = device->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
+            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+        void* transform_data = scene_transform_buffer->Map();
+        std::memcpy(transform_data, &identity_transform, sizeof(SceneTransform));
+        scene_transform_buffer->Unmap();
+    }
+
+    if (!scene_instance_buffer)
+    {
+        RenderInstance fallback_instance = {};
+        scene_instance_buffer = device->CreateBuffer(sizeof(RenderInstance), sizeof(RenderInstance),
+            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+        void* instance_data = scene_instance_buffer->Map();
+        std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
+        scene_instance_buffer->Unmap();
+    }
+}
+
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
+    out_gpu_scene.EnsureFallbackSceneBuffers(device);
 
     if (!scene.lightmap_atlas.pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
     {
-        gpu::ImageFormat lightmap_format = scene.lightmap_atlas.format == BspLightmapAtlas::Format::kRGBA32Float
+        gpu::ImageFormat lightmap_format = scene.lightmap_atlas.format == LightmapAtlas::Format::kRGBA32Float
             ? gpu::ImageFormat::kRGBA32_Float
             : gpu::ImageFormat::kRGBA8_UNorm;
         out_gpu_scene.lightmap_texture = CreateTextureImage(device, cmd_buffer, image_layouts,
@@ -300,8 +316,36 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     std::memcpy(transform_data, scene.transforms.data(), sizeof(SceneTransform) * scene.transforms.size());
     out_gpu_scene.scene_transform_buffer->Unmap();
 
+    std::vector<RenderInstance> upload_instances = scene.instances;
+    for (RenderInstance& instance : upload_instances)
+    {
+        if (instance.material_index >= kMaxMaterialTextures || instance.material_index >= scene.materials.size() + 1)
+        {
+            instance.material_index = 0;
+        }
+        if (instance.transform_index >= scene.transforms.size())
+        {
+            instance.transform_index = 0;
+        }
+    }
+
+    RenderInstance fallback_instance = {};
+    size_t upload_instance_count = upload_instances.empty() ? 1 : upload_instances.size();
+    out_gpu_scene.scene_instance_buffer = device->CreateBuffer(sizeof(RenderInstance) * upload_instance_count, sizeof(RenderInstance),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+    void* instance_data = out_gpu_scene.scene_instance_buffer->Map();
+    if (upload_instances.empty())
+    {
+        std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
+    }
+    else
+    {
+        std::memcpy(instance_data, upload_instances.data(), sizeof(RenderInstance) * upload_instances.size());
+    }
+    out_gpu_scene.scene_instance_buffer->Unmap();
+
     std::vector<Vertex> upload_vertices = scene.vertices;
-    BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, upload_vertices, out_gpu_scene.fallback_texture, out_gpu_scene);
+    BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, out_gpu_scene.fallback_texture, out_gpu_scene);
     UploadVertices(device, upload_vertices, out_gpu_scene);
 }
 

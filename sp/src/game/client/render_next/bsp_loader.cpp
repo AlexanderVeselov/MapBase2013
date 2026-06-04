@@ -195,15 +195,15 @@ void BilerpUV(float const uv00[2], float const uv01[2], float const uv10[2], flo
         + uv11[1] * (s * t);
 }
 
-void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
-    BspLightmapAtlas& out_lightmap_atlas, std::vector<BrushSubmodel>& out_brush_submodels)
+void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<RenderMaterial>& out_materials,
+    LightmapAtlas& out_lightmap_atlas, std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
-    out_brush_submodels.clear();
+    out_brush_model_ranges.clear();
 
     out_lightmap_atlas.width = 1;
     out_lightmap_atlas.height = 1;
-    out_lightmap_atlas.format = BspLightmapAtlas::Format::kRGBA8;
+    out_lightmap_atlas.format = LightmapAtlas::Format::kRGBA8;
     out_lightmap_atlas.pixels = {255, 255, 255, 255};
 
     if (!f.is_open())
@@ -377,7 +377,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
 
     out_lightmap_atlas.width = atlas_width;
     out_lightmap_atlas.height = atlas_height;
-    out_lightmap_atlas.format = use_hdr_lightmaps ? BspLightmapAtlas::Format::kRGBA32Float : BspLightmapAtlas::Format::kRGBA8;
+    out_lightmap_atlas.format = use_hdr_lightmaps ? LightmapAtlas::Format::kRGBA32Float : LightmapAtlas::Format::kRGBA8;
     if (use_hdr_lightmaps)
     {
         out_lightmap_atlas.pixels.resize(atlas_pixels_hdr.size() * sizeof(float));
@@ -394,7 +394,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         auto [it, inserted] = material_indices.emplace(material_name, 0u);
         if (inserted)
         {
-            out_materials.push_back(BspMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
+            out_materials.push_back(RenderMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
             texture_index = static_cast<uint32_t>(out_materials.size());
             it->second = texture_index;
         }
@@ -696,7 +696,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         return;
     }
 
-    auto append_model_faces = [&](dmodel_t const& model)
+    auto append_model_faces = [&](dmodel_t const& model, int submodel_index)
     {
         if (model.firstface < 0 || model.numfaces < 0 || model.firstface + model.numfaces > static_cast<int>(faces.size()))
         {
@@ -705,24 +705,22 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
 
         for (int face_offset = 0; face_offset < model.numfaces; ++face_offset)
         {
+            uint32_t first_vertex = static_cast<uint32_t>(out_vertices.size());
             append_face(model.firstface + face_offset);
+            uint32_t vertex_count = static_cast<uint32_t>(out_vertices.size()) - first_vertex;
+            if (submodel_index > 0 && vertex_count > 0)
+            {
+                uint32_t material_index = out_vertices[first_vertex].instance_id;
+                out_brush_model_ranges.push_back({submodel_index, first_vertex, vertex_count, material_index});
+            }
         }
     };
 
-    append_model_faces(models[0]);
+    append_model_faces(models[0], 0);
 
-    out_brush_submodels.reserve(models.size() > 0 ? models.size() - 1 : 0);
     for (int submodel_index = 1; submodel_index < static_cast<int>(models.size()); ++submodel_index)
     {
-        uint32_t first_vertex = static_cast<uint32_t>(out_vertices.size());
-        append_model_faces(models[submodel_index]);
-        uint32_t vertex_count = static_cast<uint32_t>(out_vertices.size()) - first_vertex;
-        if (vertex_count == 0)
-        {
-            continue;
-        }
-
-        out_brush_submodels.push_back({submodel_index, first_vertex, vertex_count});
+        append_model_faces(models[submodel_index], submodel_index);
     }
 }
 

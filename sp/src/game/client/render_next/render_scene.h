@@ -52,9 +52,11 @@ inline SceneTransform MakeSceneTransform(matrix3x4_t const& source_transform)
     return transform;
 }
 
-struct BrushEntityInstance
+struct RenderInstance
 {
-    int entity_index = -1;
+    uint32_t first_vertex = 0;
+    uint32_t vertex_count = 0;
+    uint32_t material_index = 0;
     uint32_t transform_index = 0;
 };
 
@@ -62,19 +64,16 @@ struct RenderSceneCpu
 {
     std::vector<SceneTransform> transforms;
     std::vector<Vertex> vertices;
-    std::vector<Vertex> base_vertices;
-    std::vector<Vertex> brush_source_vertices;
-    std::vector<BspMaterial> materials;
-    std::vector<BrushSubmodel> brush_submodels;
-    std::vector<BrushEntityInstance> brush_entities;
-    BspLightmapAtlas lightmap_atlas;
-    bool brush_entities_initialized = false;
+    std::vector<RenderMaterial> materials;
+    std::vector<RenderInstance> instances;
+    LightmapAtlas lightmap_atlas;
 };
 
 struct RenderSceneGpu
 {
     gpu::BufferPtr vertex_buffer;
     gpu::BufferPtr scene_transform_buffer;
+    gpu::BufferPtr scene_instance_buffer;
     gpu::ImagePtr fallback_texture;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
@@ -83,5 +82,6 @@ struct RenderSceneGpu
 
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts);
+    void EnsureFallbackSceneBuffers(gpu::DevicePtr const& device);
 };
 

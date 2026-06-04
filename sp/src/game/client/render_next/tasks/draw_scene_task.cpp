@@ -13,8 +13,8 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     (void)gpu_scene;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
-    pipeline_desc.vs_filename = "render_next.vs";
-    pipeline_desc.ps_filename = "render_next.ps";
+    pipeline_desc.vs_filename = "render_scene.vs";
+    pipeline_desc.ps_filename = "render_scene.ps";
     pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm};
     pipeline_desc.depth_enabled = true;
     pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
@@ -51,6 +51,7 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, 
     descriptor_set_->Clear();
     descriptor_set_->BindBuffer(*view_proj_buffer, 0);
     descriptor_set_->BindBuffer(*gpu_scene.scene_transform_buffer, 1);
+    descriptor_set_->BindBuffer(*gpu_scene.scene_instance_buffer, 2);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);

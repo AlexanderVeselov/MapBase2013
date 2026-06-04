@@ -11,19 +11,18 @@ struct Vertex
     Vector normal;
     float uv[2];
     float lightmap_uv[2];
-    uint32_t texture_index;
+    uint32_t instance_id = 0;
     float color[3] = {1.0f, 1.0f, 1.0f};
-    uint32_t transform_index = 0;
 };
 
-struct BspMaterial
+struct RenderMaterial
 {
     std::string material_name;
     int width = 1;
     int height = 1;
 };
 
-struct BspLightmapAtlas
+struct LightmapAtlas
 {
     enum class Format
     {
@@ -45,14 +44,15 @@ struct StaticPropInstance
     int skin = 0;
 };
 
-struct BrushSubmodel
+struct BrushModelSourceRange
 {
     int submodel_index = 0;
     uint32_t first_vertex = 0;
     uint32_t vertex_count = 0;
+    uint32_t material_index = 0;
 };
 
-void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<BspMaterial>& out_materials,
-    BspLightmapAtlas& out_lightmap_atlas, std::vector<BrushSubmodel>& out_brush_submodels);
+void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<RenderMaterial>& out_materials,
+    LightmapAtlas& out_lightmap_atlas, std::vector<BrushModelSourceRange>& out_brush_model_ranges);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);
 

@@ -3,18 +3,15 @@
 #ifdef SOURCE_SDK_RENDER_NEXT
 
 #include "render_scene.h"
-#include "scene_builder.h"
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
+#include "source_adapter.h"
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
 #include "tasks/draw_scene_task.h"
 #include "tasks/copy_depth_task.h"
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
-#include "movevars_shared.h"
-#include "cliententitylist.h"
-#include "icliententity.h"
 #include "convar.h"
 
 #include <cstring>
@@ -37,6 +34,7 @@ private:
     void TryInitializeBrushEntities();
 
 private:
+    SourceAdapter engine_adapter_;
     RenderBackendContext backend_;
     RenderBackendResources backend_resources_;
     RenderGraph render_graph_;
@@ -83,10 +81,11 @@ void RenderImpl::Init()
     InitializeRenderBackend(__FILE__, backend_, backend_resources_, gpu_scene_);
     EnsureRenderCommandBuffer(backend_);
     gpu_scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
+    gpu_scene_.EnsureFallbackSceneBuffers(backend_.device);
     sky_render_task_.Initialize(backend_.device, backend_resources_, gpu_scene_);
     draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
-    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, sv_skyname.GetString());
+    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, engine_adapter_.GetSkyName());
     SubmitRenderCommandsAndWait(backend_);
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
     render_graph_.Reset();
@@ -99,7 +98,7 @@ void RenderImpl::LoadLevel(char const* level_name)
 {
     BuildCpuScene(level_name);
     EnsureRenderCommandBuffer(backend_);
-    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, sv_skyname.GetString());
+    sky_render_task_.LoadSky(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, backend_resources_, gpu_scene_, engine_adapter_.GetSkyName());
     UploadSceneToGpu();
 }
 
@@ -134,7 +133,7 @@ void RenderImpl::ReloadPipelines()
 
 void RenderImpl::BuildCpuScene(char const* level_name)
 {
-    BuildRenderSceneCpu(level_name, scene_);
+    engine_adapter_.BuildWorldScene(level_name, scene_);
 }
 
 void RenderImpl::UploadSceneToGpu()
@@ -187,36 +186,12 @@ void RenderImpl::FinalizeFrame()
 
 void RenderImpl::UpdateDynamicSceneTransforms()
 {
-    if (!gpu_scene_.scene_transform_buffer || scene_.transforms.empty() || scene_.brush_entities.empty() || !cl_entitylist)
+    if (!gpu_scene_.scene_transform_buffer || scene_.transforms.empty())
     {
         return;
     }
 
-    for (BrushEntityInstance const& brush_entity : scene_.brush_entities)
-    {
-        if (brush_entity.transform_index >= scene_.transforms.size())
-        {
-            continue;
-        }
-
-        IClientEntity* entity = cl_entitylist->GetClientEntity(brush_entity.entity_index);
-        if (!entity)
-        {
-            scene_.transforms[brush_entity.transform_index] = MakeIdentitySceneTransform();
-            continue;
-        }
-
-        IClientRenderable* renderable = entity->GetClientRenderable();
-        if (!renderable)
-        {
-            scene_.transforms[brush_entity.transform_index] = MakeIdentitySceneTransform();
-            continue;
-        }
-
-        matrix3x4_t model_to_world;
-        AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
-        scene_.transforms[brush_entity.transform_index] = MakeSceneTransform(model_to_world);
-    }
+    engine_adapter_.UpdateDynamicSceneTransforms(scene_);
 
     void* transform_data = gpu_scene_.scene_transform_buffer->Map();
     std::memcpy(transform_data, scene_.transforms.data(), sizeof(SceneTransform) * scene_.transforms.size());
@@ -225,10 +200,13 @@ void RenderImpl::UpdateDynamicSceneTransforms()
 
 void RenderImpl::TryInitializeBrushEntities()
 {
-    bool was_initialized = scene_.brush_entities_initialized;
     size_t previous_vertex_count = scene_.vertices.size();
-    InitializeBrushEntities(scene_);
-    if (scene_.brush_entities_initialized == was_initialized && scene_.vertices.size() == previous_vertex_count)
+    size_t previous_instance_count = scene_.instances.size();
+    size_t previous_transform_count = scene_.transforms.size();
+    engine_adapter_.InitializeBrushEntities(scene_);
+    if (scene_.vertices.size() == previous_vertex_count
+        && scene_.instances.size() == previous_instance_count
+        && scene_.transforms.size() == previous_transform_count)
     {
         return;
     }
