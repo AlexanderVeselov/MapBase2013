@@ -58,14 +58,14 @@ struct RenderInstance
     static constexpr uint32_t kInvalidVertexColorOffset = UINT32_MAX;
 
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-    uint32_t first_vertex = 0;
-    uint32_t vertex_count = 0;
+    uint32_t vertex_offset = 0;
+    uint32_t index_offset = 0;
+    uint32_t index_count = 0;
     uint32_t material_index = 0;
     uint32_t transform_index = 0;
     uint32_t vertex_color_offset = kInvalidVertexColorOffset;
     uint32_t padding0 = 0;
     uint32_t padding1 = 0;
-    uint32_t padding2 = 0;
 };
 
 static_assert(sizeof(RenderInstance) == 48, "RenderInstance must match HLSL InstanceData layout");
@@ -79,6 +79,7 @@ struct RenderSceneCpu
 {
     std::vector<SceneTransform> transforms;
     std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     std::vector<VertexColorData> vertex_colors;
     std::vector<RenderMaterial> materials;
     std::vector<RenderInstance> instances;
@@ -88,6 +89,7 @@ struct RenderSceneCpu
 struct RenderSceneGpu
 {
     gpu::BufferPtr vertex_buffer;
+    gpu::BufferPtr index_buffer;
     gpu::BufferPtr scene_transform_buffer;
     gpu::BufferPtr scene_instance_buffer;
     gpu::BufferPtr scene_vertex_color_buffer;

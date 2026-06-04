@@ -78,15 +78,17 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
     context.backend.cmd_buffer->SetVertexBuffer(context.gpu_scene.vertex_buffer, sizeof(Vertex));
+    context.backend.cmd_buffer->SetIndexBuffer(context.gpu_scene.index_buffer);
     for (uint32_t instance_index = 0; instance_index < context.gpu_scene.uploaded_instances.size(); ++instance_index)
     {
         RenderInstance const& instance = context.gpu_scene.uploaded_instances[instance_index];
-        if (instance.vertex_count == 0)
+        if (instance.index_count == 0)
         {
             continue;
         }
 
         context.backend.cmd_buffer->SetRootConstants(&instance_index, sizeof(instance_index));
-        context.backend.cmd_buffer->Draw(instance.vertex_count, 1, instance.first_vertex, instance_index);
+        context.backend.cmd_buffer->DrawIndexed(instance.index_count, 1, instance.index_offset,
+            static_cast<int32_t>(instance.vertex_offset), instance_index);
     }
 }

@@ -65,8 +65,10 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fa
 
 struct StaticPropMeshRange
 {
-    uint32_t first_vertex = 0;
+    uint32_t vertex_offset = 0;
     uint32_t vertex_count = 0;
+    uint32_t index_offset = 0;
+    uint32_t index_count = 0;
     uint32_t material_index = 0;
 };
 
@@ -129,10 +131,10 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
         {
             for (StaticPropMeshRange const& mesh_range : existing_mesh->second)
             {
-                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, mesh_range.first_vertex, mesh_range.vertex_count,
+                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, mesh_range.vertex_offset, mesh_range.vertex_count,
                     model_to_world, io_scene.vertex_colors);
-                AddRenderInstance(io_scene.instances, mesh_range.first_vertex, mesh_range.vertex_count, mesh_range.material_index,
-                    transform_index, nullptr, vertex_color_offset);
+                AddRenderInstance(io_scene.instances, mesh_range.vertex_offset, mesh_range.index_offset, mesh_range.index_count,
+                    mesh_range.material_index, transform_index, nullptr, vertex_color_offset);
             }
 
             ++appended_prop_count;
@@ -187,27 +189,29 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
             GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
             std::string material_name = material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "";
             uint32_t material_index = FindOrAddMaterial(material_indices, io_scene.materials, material_name);
-            uint32_t first_vertex = static_cast<uint32_t>(io_scene.vertices.size());
+            uint32_t vertex_offset = static_cast<uint32_t>(io_scene.vertices.size());
+            uint32_t index_offset = static_cast<uint32_t>(io_scene.indices.size());
             int triangles_before_batch = appended_triangle_count;
 
-            auto append_vertex_by_index = [&](int vertex_index)
+            auto append_vertex_by_index = [&](int vertex_index) -> uint32_t
             {
                 if (vertex_index < 0 || vertex_index >= material_batch.m_Verts.Count())
                 {
-                    return;
+                    return 0;
                 }
 
                 Vertex vertex = MakeStaticPropVertex(material_batch.m_Verts[vertex_index], fallback_lightmap_u, fallback_lightmap_v);
                 io_scene.vertices.push_back(vertex);
+                return static_cast<uint32_t>(io_scene.vertices.size() - 1 - vertex_offset);
             };
 
             if (material_batch.m_TriListIndices.Count() >= 3)
             {
                 for (int index = 0; index + 2 < material_batch.m_TriListIndices.Count(); index += 3)
                 {
-                    append_vertex_by_index(material_batch.m_TriListIndices[index + 0]);
-                    append_vertex_by_index(material_batch.m_TriListIndices[index + 1]);
-                    append_vertex_by_index(material_batch.m_TriListIndices[index + 2]);
+                    io_scene.indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 0]));
+                    io_scene.indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 1]));
+                    io_scene.indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 2]));
                     ++appended_triangle_count;
                 }
             }
@@ -215,20 +219,22 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
             {
                 for (int vertex_index = 0; vertex_index + 2 < material_batch.m_Verts.Count(); vertex_index += 3)
                 {
-                    append_vertex_by_index(vertex_index + 0);
-                    append_vertex_by_index(vertex_index + 1);
-                    append_vertex_by_index(vertex_index + 2);
+                    io_scene.indices.push_back(append_vertex_by_index(vertex_index + 0));
+                    io_scene.indices.push_back(append_vertex_by_index(vertex_index + 1));
+                    io_scene.indices.push_back(append_vertex_by_index(vertex_index + 2));
                     ++appended_triangle_count;
                 }
             }
 
-            uint32_t vertex_count = static_cast<uint32_t>(io_scene.vertices.size()) - first_vertex;
-            if (vertex_count > 0 && appended_triangle_count > triangles_before_batch)
+            uint32_t vertex_count = static_cast<uint32_t>(io_scene.vertices.size()) - vertex_offset;
+            uint32_t index_count = static_cast<uint32_t>(io_scene.indices.size()) - index_offset;
+            if (vertex_count > 0 && index_count > 0 && appended_triangle_count > triangles_before_batch)
             {
-                mesh_ranges.push_back({first_vertex, vertex_count, material_index});
-                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, first_vertex, vertex_count,
+                mesh_ranges.push_back({vertex_offset, vertex_count, index_offset, index_count, material_index});
+                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, vertex_offset, vertex_count,
                     model_to_world, io_scene.vertex_colors);
-                AddRenderInstance(io_scene.instances, first_vertex, vertex_count, material_index, transform_index, nullptr, vertex_color_offset);
+                AddRenderInstance(io_scene.instances, vertex_offset, index_offset, index_count, material_index, transform_index,
+                    nullptr, vertex_color_offset);
             }
         }
 

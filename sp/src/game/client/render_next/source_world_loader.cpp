@@ -11,15 +11,17 @@ void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderSceneCpu& o
     out_scene.transforms.push_back(MakeIdentitySceneTransform());
 
     std::vector<MeshSourceRange> world_mesh_ranges;
-    LoadBsp(level_name, out_scene.vertices, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges, out_cache.brush_model_ranges);
+    LoadBsp(level_name, out_scene.vertices, out_scene.indices, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges,
+        out_cache.brush_model_ranges);
 
     for (MeshSourceRange const& mesh_range : world_mesh_ranges)
     {
-        if (mesh_range.vertex_count == 0)
+        if (mesh_range.index_count == 0)
         {
             continue;
         }
 
-        AddRenderInstance(out_scene.instances, mesh_range.first_vertex, mesh_range.vertex_count, mesh_range.material_index, 0);
+        AddRenderInstance(out_scene.instances, mesh_range.first_vertex, mesh_range.first_index, mesh_range.index_count,
+            mesh_range.material_index, 0);
     }
 }

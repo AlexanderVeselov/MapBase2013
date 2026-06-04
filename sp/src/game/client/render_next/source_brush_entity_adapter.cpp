@@ -102,12 +102,14 @@ void SourceBrushEntityAdapter::InitializeBrushEntities(RenderSceneCpu& scene, So
 
         for (BrushModelSourceRange const* brush_range : submodel_it->second)
         {
-            if (!brush_range || brush_range->first_vertex + brush_range->vertex_count > scene.vertices.size())
+            if (!brush_range || brush_range->first_vertex > scene.vertices.size()
+                || brush_range->first_index + brush_range->index_count > scene.indices.size())
             {
                 continue;
             }
 
-            AddRenderInstance(scene.instances, brush_range->first_vertex, brush_range->vertex_count, brush_range->material_index, transform_index);
+            AddRenderInstance(scene.instances, brush_range->first_vertex, brush_range->first_index, brush_range->index_count,
+                brush_range->material_index, transform_index);
         }
 
         ++rendered_brush_entities;

@@ -13,12 +13,13 @@ StructuredBuffer<float4x4> g_scene_transforms : register(t1);
 struct InstanceData
 {
     float4 color;
-    uint first_vertex;
-    uint vertex_count;
+    uint vertex_offset;
+    uint index_offset;
+    uint index_count;
     uint material_index;
     uint transform_index;
     uint vertex_color_offset;
-    uint padding[3];
+    uint padding[2];
 };
 
 StructuredBuffer<InstanceData> g_scene_instances : register(t2);
