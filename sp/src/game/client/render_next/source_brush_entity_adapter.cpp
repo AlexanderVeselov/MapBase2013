@@ -50,7 +50,6 @@ void SourceBrushEntityAdapter::InitializeBrushEntities(RenderSceneCpu& scene, So
         return;
     }
 
-    scene.vertices = build_cache.base_vertices;
     scene.transforms = build_cache.base_transforms;
     scene.instances = build_cache.base_instances;
     dynamic_bindings_.clear();
@@ -103,18 +102,12 @@ void SourceBrushEntityAdapter::InitializeBrushEntities(RenderSceneCpu& scene, So
 
         for (BrushModelSourceRange const* brush_range : submodel_it->second)
         {
-            if (!brush_range || brush_range->first_vertex + brush_range->vertex_count > build_cache.brush_model_vertices.size())
+            if (!brush_range || brush_range->first_vertex + brush_range->vertex_count > scene.vertices.size())
             {
                 continue;
             }
 
-            uint32_t first_vertex = static_cast<uint32_t>(scene.vertices.size());
-            for (uint32_t vertex_offset = 0; vertex_offset < brush_range->vertex_count; ++vertex_offset)
-            {
-                scene.vertices.push_back(build_cache.brush_model_vertices[brush_range->first_vertex + vertex_offset]);
-            }
-
-            AddRenderInstance(scene.instances, scene.vertices, first_vertex, brush_range->vertex_count, brush_range->material_index, transform_index);
+            AddRenderInstance(scene.instances, brush_range->first_vertex, brush_range->vertex_count, brush_range->material_index, transform_index);
         }
 
         ++rendered_brush_entities;

@@ -131,7 +131,6 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_
     char const* resolved_level_name = (level_name && level_name[0]) ? level_name : GetLevelName();
     world_loader_.BuildBaseScene(resolved_level_name, out_scene, build_cache_);
     static_prop_loader_.AppendStaticProps(resolved_level_name, out_scene);
-    build_cache_.base_vertices = out_scene.vertices;
     build_cache_.base_transforms = out_scene.transforms;
     build_cache_.base_instances = out_scene.instances;
     brush_entity_adapter_.Reset();

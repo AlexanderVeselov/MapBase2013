@@ -212,12 +212,10 @@ void RenderImpl::UpdateDynamicSceneTransforms()
 
 void RenderImpl::TryInitializeBrushEntities()
 {
-    size_t previous_vertex_count = scene_.vertices.size();
     size_t previous_instance_count = scene_.instances.size();
     size_t previous_transform_count = scene_.transforms.size();
     engine_adapter_.InitializeBrushEntities(scene_);
-    if (scene_.vertices.size() == previous_vertex_count
-        && scene_.instances.size() == previous_instance_count
+    if (scene_.instances.size() == previous_instance_count
         && scene_.transforms.size() == previous_transform_count)
     {
         return;

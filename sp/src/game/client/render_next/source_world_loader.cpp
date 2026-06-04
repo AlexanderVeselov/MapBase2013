@@ -10,24 +10,16 @@ void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderSceneCpu& o
     out_cache = {};
     out_scene.transforms.push_back(MakeIdentitySceneTransform());
 
-    LoadBsp(level_name, out_cache.brush_model_vertices, out_scene.materials, out_scene.lightmap_atlas, out_cache.brush_model_ranges);
-    out_scene.vertices = out_cache.brush_model_vertices;
-    if (!out_cache.brush_model_ranges.empty())
-    {
-        out_scene.vertices.resize(out_cache.brush_model_ranges.front().first_vertex);
-    }
+    std::vector<MeshSourceRange> world_mesh_ranges;
+    LoadBsp(level_name, out_scene.vertices, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges, out_cache.brush_model_ranges);
 
-    uint32_t vertex_offset = 0;
-    while (vertex_offset < out_scene.vertices.size())
+    for (MeshSourceRange const& mesh_range : world_mesh_ranges)
     {
-        uint32_t range_end = vertex_offset + 1;
-        uint32_t material_index = out_scene.vertices[vertex_offset].instance_id;
-        while (range_end < out_scene.vertices.size() && out_scene.vertices[range_end].instance_id == material_index)
+        if (mesh_range.vertex_count == 0)
         {
-            ++range_end;
+            continue;
         }
 
-        AddRenderInstance(out_scene.instances, out_scene.vertices, vertex_offset, range_end - vertex_offset, material_index, 0);
-        vertex_offset = range_end;
+        AddRenderInstance(out_scene.instances, mesh_range.first_vertex, mesh_range.vertex_count, mesh_range.material_index, 0);
     }
 }

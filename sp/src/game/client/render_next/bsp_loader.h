@@ -11,8 +11,13 @@ struct Vertex
     Vector normal;
     float uv[2];
     float lightmap_uv[2];
-    uint32_t instance_id = 0;
-    float color[3] = {1.0f, 1.0f, 1.0f};
+};
+
+struct MeshSourceRange
+{
+    uint32_t first_vertex = 0;
+    uint32_t vertex_count = 0;
+    uint32_t material_index = 0;
 };
 
 struct RenderMaterial
@@ -53,6 +58,7 @@ struct BrushModelSourceRange
 };
 
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<RenderMaterial>& out_materials,
-    LightmapAtlas& out_lightmap_atlas, std::vector<BrushModelSourceRange>& out_brush_model_ranges);
+    LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
+    std::vector<BrushModelSourceRange>& out_brush_model_ranges);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);
 

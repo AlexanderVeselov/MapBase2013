@@ -289,6 +289,16 @@ void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
         scene_instance_buffer->Unmap();
     }
 
+    if (!scene_vertex_color_buffer)
+    {
+        VertexColorData fallback_vertex_color = {};
+        scene_vertex_color_buffer = device->CreateBuffer(sizeof(VertexColorData), sizeof(VertexColorData),
+            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+        void* vertex_color_data = scene_vertex_color_buffer->Map();
+        std::memcpy(vertex_color_data, &fallback_vertex_color, sizeof(VertexColorData));
+        scene_vertex_color_buffer->Unmap();
+    }
+
     if (!skybox_texture_ids_buffer)
     {
         std::array<uint32_t, 6> fallback_skybox_texture_ids = {};
@@ -377,6 +387,7 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     out_gpu_scene.scene_transform_buffer->Unmap();
 
     std::vector<RenderInstance> upload_instances = scene.instances;
+    out_gpu_scene.instance_count = static_cast<uint32_t>(upload_instances.size());
     for (RenderInstance& instance : upload_instances)
     {
         if (instance.material_index >= kMaxMaterialTextures || instance.material_index >= scene.materials.size() + 1)
@@ -387,7 +398,13 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
         {
             instance.transform_index = 0;
         }
+        if (instance.vertex_color_offset != RenderInstance::kInvalidVertexColorOffset
+            && instance.vertex_color_offset + instance.vertex_count > scene.vertex_colors.size())
+        {
+            instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+        }
     }
+    out_gpu_scene.uploaded_instances = upload_instances;
 
     RenderInstance fallback_instance = {};
     size_t upload_instance_count = upload_instances.empty() ? 1 : upload_instances.size();
@@ -396,6 +413,8 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     void* instance_data = out_gpu_scene.scene_instance_buffer->Map();
     if (upload_instances.empty())
     {
+        out_gpu_scene.uploaded_instances.clear();
+        out_gpu_scene.instance_count = 0;
         std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
     }
     else
@@ -403,6 +422,21 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
         std::memcpy(instance_data, upload_instances.data(), sizeof(RenderInstance) * upload_instances.size());
     }
     out_gpu_scene.scene_instance_buffer->Unmap();
+
+    size_t upload_vertex_color_count = scene.vertex_colors.empty() ? 1 : scene.vertex_colors.size();
+    out_gpu_scene.scene_vertex_color_buffer = device->CreateBuffer(sizeof(VertexColorData) * upload_vertex_color_count, sizeof(VertexColorData),
+        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+    void* vertex_color_data = out_gpu_scene.scene_vertex_color_buffer->Map();
+    if (scene.vertex_colors.empty())
+    {
+        VertexColorData fallback_vertex_color = {};
+        std::memcpy(vertex_color_data, &fallback_vertex_color, sizeof(VertexColorData));
+    }
+    else
+    {
+        std::memcpy(vertex_color_data, scene.vertex_colors.data(), sizeof(VertexColorData) * scene.vertex_colors.size());
+    }
+    out_gpu_scene.scene_vertex_color_buffer->Unmap();
 
     std::vector<Vertex> upload_vertices = scene.vertices;
     BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, out_gpu_scene.fallback_texture, out_gpu_scene);

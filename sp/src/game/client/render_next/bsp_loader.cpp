@@ -196,9 +196,11 @@ void BilerpUV(float const uv00[2], float const uv01[2], float const uv10[2], flo
 }
 
 void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<RenderMaterial>& out_materials,
-    LightmapAtlas& out_lightmap_atlas, std::vector<BrushModelSourceRange>& out_brush_model_ranges)
+    LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
+    std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
+    out_world_mesh_ranges.clear();
     out_brush_model_ranges.clear();
 
     out_lightmap_atlas.width = 1;
@@ -406,7 +408,7 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         return texture_index;
     };
 
-    auto append_face = [&](int fi)
+    auto append_face = [&](int fi, uint32_t* out_material_index)
     {
         const dface_t& face = faces[fi];
 
@@ -430,6 +432,10 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
 
         std::string material_name = material_name_ptr;
         uint32_t texture_index = get_texture_index(material_name, face_texdata);
+        if (out_material_index)
+        {
+            *out_material_index = texture_index;
+        }
 
         float uv_scale_u = face_texdata.view_width > 0 ? 1.0f / static_cast<float>(face_texdata.view_width) : 1.0f;
         float uv_scale_v = face_texdata.view_height > 0 ? 1.0f / static_cast<float>(face_texdata.view_height) : 1.0f;
@@ -610,11 +616,11 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
                 DispVertexData const& vertex1 = disp_vertex_data[triangle.b];
                 DispVertexData const& vertex2 = disp_vertex_data[triangle.c];
                 out_vertices.push_back({vertex0.position, vertex0.normal, {vertex0.uv[0], vertex0.uv[1]},
-                    {vertex0.lightmap_uv[0], vertex0.lightmap_uv[1]}, texture_index});
+                    {vertex0.lightmap_uv[0], vertex0.lightmap_uv[1]}});
                 out_vertices.push_back({vertex1.position, vertex1.normal, {vertex1.uv[0], vertex1.uv[1]},
-                    {vertex1.lightmap_uv[0], vertex1.lightmap_uv[1]}, texture_index});
+                    {vertex1.lightmap_uv[0], vertex1.lightmap_uv[1]}});
                 out_vertices.push_back({vertex2.position, vertex2.normal, {vertex2.uv[0], vertex2.uv[1]},
-                    {vertex2.lightmap_uv[0], vertex2.lightmap_uv[1]}, texture_index});
+                    {vertex2.lightmap_uv[0], vertex2.lightmap_uv[1]}});
             }
 
             return;
@@ -685,9 +691,9 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
 
             Vector normal = (v2 - v0).Cross(v1 - v0).Normalized();
 
-            out_vertices.push_back({v0, normal, {uv0[0], uv0[1]}, {lightmap_uv0[0], lightmap_uv0[1]}, texture_index});
-            out_vertices.push_back({v1, normal, {uv1[0], uv1[1]}, {lightmap_uv1[0], lightmap_uv1[1]}, texture_index});
-            out_vertices.push_back({v2, normal, {uv2[0], uv2[1]}, {lightmap_uv2[0], lightmap_uv2[1]}, texture_index});
+            out_vertices.push_back({v0, normal, {uv0[0], uv0[1]}, {lightmap_uv0[0], lightmap_uv0[1]}});
+            out_vertices.push_back({v1, normal, {uv1[0], uv1[1]}, {lightmap_uv1[0], lightmap_uv1[1]}});
+            out_vertices.push_back({v2, normal, {uv2[0], uv2[1]}, {lightmap_uv2[0], lightmap_uv2[1]}});
         }
     };
 
@@ -706,11 +712,20 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         for (int face_offset = 0; face_offset < model.numfaces; ++face_offset)
         {
             uint32_t first_vertex = static_cast<uint32_t>(out_vertices.size());
-            append_face(model.firstface + face_offset);
+            uint32_t material_index = 0;
+            append_face(model.firstface + face_offset, &material_index);
             uint32_t vertex_count = static_cast<uint32_t>(out_vertices.size()) - first_vertex;
-            if (submodel_index > 0 && vertex_count > 0)
+            if (vertex_count == 0)
             {
-                uint32_t material_index = out_vertices[first_vertex].instance_id;
+                continue;
+            }
+
+            if (submodel_index == 0)
+            {
+                out_world_mesh_ranges.push_back({first_vertex, vertex_count, material_index});
+            }
+            else
+            {
                 out_brush_model_ranges.push_back({submodel_index, first_vertex, vertex_count, material_index});
             }
         }

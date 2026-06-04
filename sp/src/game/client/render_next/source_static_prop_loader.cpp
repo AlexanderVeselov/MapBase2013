@@ -14,12 +14,12 @@
 
 namespace
 {
-void ComputeStaticPropVertexColor(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world, float out_color[3])
+void ComputeStaticPropVertexColor(Vertex const& source_vertex, matrix3x4_t const& model_to_world, float out_color[3])
 {
     Vector world_position;
     Vector world_normal;
-    VectorTransform(source_vertex.m_Position, model_to_world, world_position);
-    VectorRotate(source_vertex.m_Normal, model_to_world, world_normal);
+    VectorTransform(source_vertex.pos, model_to_world, world_position);
+    VectorRotate(source_vertex.normal, model_to_world, world_normal);
     if (world_normal.Dot(world_normal) > 0.0f)
     {
         world_normal.NormalizeInPlace();
@@ -56,15 +56,35 @@ uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_i
     return material_index;
 }
 
-Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, matrix3x4_t const& model_to_world,
-    matrix3x4_t const pose_to_world[MAXSTUDIOBONES], float fallback_lightmap_u, float fallback_lightmap_v)
+Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fallback_lightmap_u, float fallback_lightmap_v)
 {
-    (void)pose_to_world;
-
     Vertex vertex = {source_vertex.m_Position, source_vertex.m_Normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
         {fallback_lightmap_u, fallback_lightmap_v}};
-    ComputeStaticPropVertexColor(source_vertex, model_to_world, vertex.color);
     return vertex;
+}
+
+struct StaticPropMeshRange
+{
+    uint32_t first_vertex = 0;
+    uint32_t vertex_count = 0;
+    uint32_t material_index = 0;
+};
+
+using StaticPropMeshKey = std::string;
+
+uint32_t AppendStaticPropVertexColors(std::vector<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count,
+    matrix3x4_t const& model_to_world, std::vector<VertexColorData>& out_vertex_colors)
+{
+    uint32_t vertex_color_offset = static_cast<uint32_t>(out_vertex_colors.size());
+    out_vertex_colors.reserve(out_vertex_colors.size() + vertex_count);
+    for (uint32_t vertex_offset = 0; vertex_offset < vertex_count; ++vertex_offset)
+    {
+        VertexColorData vertex_color = {};
+        ComputeStaticPropVertexColor(vertices[first_vertex + vertex_offset], model_to_world, vertex_color.color);
+        out_vertex_colors.push_back(vertex_color);
+    }
+
+    return vertex_color_offset;
 }
 }
 
@@ -93,6 +113,7 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
     float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(io_scene.lightmap_atlas.height, 1));
     int appended_prop_count = 0;
     int appended_triangle_count = 0;
+    std::unordered_map<StaticPropMeshKey, std::vector<StaticPropMeshRange>> mesh_ranges_by_key;
 
     MDLCACHE_CRITICAL_SECTION();
     for (StaticPropInstance const& static_prop : static_props)
@@ -101,6 +122,22 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
         AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
         uint32_t transform_index = static_cast<uint32_t>(io_scene.transforms.size());
         io_scene.transforms.push_back(MakeSceneTransform(model_to_world));
+
+        StaticPropMeshKey mesh_key = static_prop.model_name + "#" + std::to_string(static_prop.skin);
+        auto existing_mesh = mesh_ranges_by_key.find(mesh_key);
+        if (existing_mesh != mesh_ranges_by_key.end())
+        {
+            for (StaticPropMeshRange const& mesh_range : existing_mesh->second)
+            {
+                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, mesh_range.first_vertex, mesh_range.vertex_count,
+                    model_to_world, io_scene.vertex_colors);
+                AddRenderInstance(io_scene.instances, mesh_range.first_vertex, mesh_range.vertex_count, mesh_range.material_index,
+                    transform_index, nullptr, vertex_color_offset);
+            }
+
+            ++appended_prop_count;
+            continue;
+        }
 
         MDLHandle_t mdl_handle = mdlcache->FindMDL(static_prop.model_name.c_str());
         if (mdl_handle == MDLHANDLE_INVALID)
@@ -144,6 +181,7 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
 
         GetTriangles_Output_t triangle_output;
         g_pStudioRender->GetTriangles(draw_info, bone_to_world, triangle_output);
+        std::vector<StaticPropMeshRange> mesh_ranges;
         for (int batch_index = 0; batch_index < triangle_output.m_MaterialBatches.Count(); ++batch_index)
         {
             GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
@@ -159,8 +197,8 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
                     return;
                 }
 
-                io_scene.vertices.push_back(MakeStaticPropVertex(material_batch.m_Verts[vertex_index], model_to_world,
-                    triangle_output.m_PoseToWorld, fallback_lightmap_u, fallback_lightmap_v));
+                Vertex vertex = MakeStaticPropVertex(material_batch.m_Verts[vertex_index], fallback_lightmap_u, fallback_lightmap_v);
+                io_scene.vertices.push_back(vertex);
             };
 
             if (material_batch.m_TriListIndices.Count() >= 3)
@@ -187,9 +225,17 @@ void SourceStaticPropLoader::AppendStaticProps(char const* level_name, RenderSce
             uint32_t vertex_count = static_cast<uint32_t>(io_scene.vertices.size()) - first_vertex;
             if (vertex_count > 0 && appended_triangle_count > triangles_before_batch)
             {
-                AddRenderInstance(io_scene.instances, io_scene.vertices, first_vertex, vertex_count, material_index, transform_index);
-                ++appended_prop_count;
+                mesh_ranges.push_back({first_vertex, vertex_count, material_index});
+                uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, first_vertex, vertex_count,
+                    model_to_world, io_scene.vertex_colors);
+                AddRenderInstance(io_scene.instances, first_vertex, vertex_count, material_index, transform_index, nullptr, vertex_color_offset);
             }
+        }
+
+        if (!mesh_ranges.empty())
+        {
+            mesh_ranges_by_key.emplace(std::move(mesh_key), std::move(mesh_ranges));
+            ++appended_prop_count;
         }
 
         mdlcache->UnlockStudioHdr(mdl_handle);
