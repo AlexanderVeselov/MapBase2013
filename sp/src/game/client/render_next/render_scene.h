@@ -56,6 +56,8 @@ inline SceneTransform MakeSceneTransform(matrix3x4_t const& source_transform)
 struct RenderInstance
 {
     static constexpr uint32_t kInvalidVertexColorOffset = UINT32_MAX;
+    static constexpr uint32_t kVisible = 1;
+    static constexpr uint32_t kHidden = 0;
 
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     uint32_t vertex_offset = 0;
@@ -64,8 +66,8 @@ struct RenderInstance
     uint32_t material_index = 0;
     uint32_t transform_index = 0;
     uint32_t vertex_color_offset = kInvalidVertexColorOffset;
+    uint32_t is_visible = kVisible;
     uint32_t padding0 = 0;
-    uint32_t padding1 = 0;
 };
 
 static_assert(sizeof(RenderInstance) == 48, "RenderInstance must match HLSL InstanceData layout");

@@ -15,6 +15,5 @@ public:
     virtual void GetSkyboxTextureNames(std::array<std::string, 6>& out_texture_names) const = 0;
 
     virtual void BuildWorldScene(char const* level_name, RenderSceneCpu& out_scene) = 0;
-    virtual void InitializeBrushEntities(RenderSceneCpu& scene) = 0;
-    virtual void UpdateDynamicSceneTransforms(RenderSceneCpu& scene) = 0;
+    virtual void UpdateRenderableEntities(RenderSceneCpu& scene) = 0;
 };

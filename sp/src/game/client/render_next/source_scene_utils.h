@@ -13,6 +13,7 @@ inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, ui
     instance.material_index = material_index;
     instance.transform_index = transform_index;
     instance.vertex_color_offset = vertex_color_offset;
+    instance.is_visible = RenderInstance::kVisible;
     if (color)
     {
         instance.color[0] = color[0];

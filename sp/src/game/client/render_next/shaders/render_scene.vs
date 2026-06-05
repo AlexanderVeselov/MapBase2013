@@ -19,7 +19,8 @@ struct InstanceData
     uint material_index;
     uint transform_index;
     uint vertex_color_offset;
-    uint padding[2];
+    uint is_visible;
+    uint padding;
 };
 
 StructuredBuffer<InstanceData> g_scene_instances : register(t2);

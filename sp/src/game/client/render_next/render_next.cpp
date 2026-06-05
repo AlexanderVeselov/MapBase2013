@@ -33,8 +33,7 @@ private:
     void PrepareFrame(ViewSetup const& view_setup);
     void DrawScene();
     void FinalizeFrame();
-    void UpdateDynamicSceneTransforms();
-    void TryInitializeBrushEntities();
+    void UpdateRenderableEntities();
 
 private:
     SourceAdapter engine_adapter_;
@@ -107,7 +106,7 @@ void RenderImpl::LoadLevel(char const* level_name)
 
 void RenderImpl::RenderView(ViewSetup const& view_setup)
 {
-    TryInitializeBrushEntities();
+    UpdateRenderableEntities();
     PrepareFrame(view_setup);
     DrawScene();
     FinalizeFrame();
@@ -172,8 +171,6 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
     MatrixTranspose(view_projection_matrix, view_projection_matrix);
     MatrixTranspose(inverse_view_projection_matrix, inverse_view_projection_matrix);
 
-    UpdateDynamicSceneTransforms();
-
     void* mapped_data = backend_resources_.view_proj_buffer->Map();
     std::memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));
     backend_resources_.view_proj_buffer->Unmap();
@@ -196,32 +193,28 @@ void RenderImpl::FinalizeFrame()
     DX9_RenderFrame();
 }
 
-void RenderImpl::UpdateDynamicSceneTransforms()
+void RenderImpl::UpdateRenderableEntities()
 {
+    engine_adapter_.UpdateRenderableEntities(scene_);
+
     if (!gpu_scene_.scene_transform_buffer || scene_.transforms.empty())
     {
         return;
     }
 
-    engine_adapter_.UpdateDynamicSceneTransforms(scene_);
-
     void* transform_data = gpu_scene_.scene_transform_buffer->Map();
     std::memcpy(transform_data, scene_.transforms.data(), sizeof(SceneTransform) * scene_.transforms.size());
     gpu_scene_.scene_transform_buffer->Unmap();
-}
 
-void RenderImpl::TryInitializeBrushEntities()
-{
-    size_t previous_instance_count = scene_.instances.size();
-    size_t previous_transform_count = scene_.transforms.size();
-    engine_adapter_.InitializeBrushEntities(scene_);
-    if (scene_.instances.size() == previous_instance_count
-        && scene_.transforms.size() == previous_transform_count)
+    if (!gpu_scene_.scene_instance_buffer || scene_.instances.empty())
     {
         return;
     }
 
-    UploadSceneToGpu();
+    gpu_scene_.uploaded_instances = scene_.instances;
+    void* instance_data = gpu_scene_.scene_instance_buffer->Map();
+    std::memcpy(instance_data, scene_.instances.data(), sizeof(RenderInstance) * scene_.instances.size());
+    gpu_scene_.scene_instance_buffer->Unmap();
 }
 
 RenderNext* GetRenderNextInstance()

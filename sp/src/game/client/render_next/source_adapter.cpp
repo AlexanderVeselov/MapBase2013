@@ -134,14 +134,10 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_
     build_cache_.base_transforms = out_scene.transforms;
     build_cache_.base_instances = out_scene.instances;
     brush_entity_adapter_.Reset();
+    brush_entity_adapter_.PopulateRenderableEntities(out_scene, build_cache_);
 }
 
-void SourceAdapter::InitializeBrushEntities(RenderSceneCpu& scene)
+void SourceAdapter::UpdateRenderableEntities(RenderSceneCpu& scene)
 {
-    brush_entity_adapter_.InitializeBrushEntities(scene, build_cache_);
-}
-
-void SourceAdapter::UpdateDynamicSceneTransforms(RenderSceneCpu& scene)
-{
-    brush_entity_adapter_.UpdateDynamicSceneTransforms(scene);
+    brush_entity_adapter_.UpdateRenderableEntities(scene);
 }

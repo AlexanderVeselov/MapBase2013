@@ -82,7 +82,7 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     for (uint32_t instance_index = 0; instance_index < context.gpu_scene.uploaded_instances.size(); ++instance_index)
     {
         RenderInstance const& instance = context.gpu_scene.uploaded_instances[instance_index];
-        if (instance.index_count == 0)
+        if (instance.index_count == 0 || instance.is_visible == RenderInstance::kHidden)
         {
             continue;
         }
