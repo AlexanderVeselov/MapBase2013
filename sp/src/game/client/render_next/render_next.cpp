@@ -197,6 +197,23 @@ void RenderImpl::UpdateRenderableEntities()
 {
     engine_adapter_.UpdateRenderableEntities(scene_);
 
+    if (!backend_.device)
+    {
+        return;
+    }
+
+    if (!scene_.transforms.empty())
+    {
+        uint64_t required_transform_buffer_size = static_cast<uint64_t>(sizeof(SceneTransform)) * scene_.transforms.size();
+        if (!gpu_scene_.scene_transform_buffer || gpu_scene_.scene_transform_buffer->GetSize() < required_transform_buffer_size)
+        {
+            gpu_scene_.scene_transform_buffer = backend_.device->CreateBuffer(required_transform_buffer_size, sizeof(SceneTransform),
+                gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+            draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+            Msg("Updated scene transform buffer to size %llu bytes for %u transforms\n", required_transform_buffer_size, static_cast<uint32_t>(scene_.transforms.size()));
+        }
+    }
+
     if (!gpu_scene_.scene_transform_buffer || scene_.transforms.empty())
     {
         return;
@@ -206,12 +223,26 @@ void RenderImpl::UpdateRenderableEntities()
     std::memcpy(transform_data, scene_.transforms.data(), sizeof(SceneTransform) * scene_.transforms.size());
     gpu_scene_.scene_transform_buffer->Unmap();
 
+    gpu_scene_.uploaded_instances = scene_.instances;
+    gpu_scene_.instance_count = static_cast<uint32_t>(scene_.instances.size());
+
+    if (!scene_.instances.empty())
+    {
+        uint64_t required_instance_buffer_size = static_cast<uint64_t>(sizeof(RenderInstance)) * scene_.instances.size();
+        if (!gpu_scene_.scene_instance_buffer || gpu_scene_.scene_instance_buffer->GetSize() < required_instance_buffer_size)
+        {
+            gpu_scene_.scene_instance_buffer = backend_.device->CreateBuffer(required_instance_buffer_size, sizeof(RenderInstance),
+                gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
+            draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+            Msg("Updated scene instance buffer to size %llu bytes for %u instances\n", required_instance_buffer_size, gpu_scene_.instance_count);
+        }
+    }
+
     if (!gpu_scene_.scene_instance_buffer || scene_.instances.empty())
     {
         return;
     }
 
-    gpu_scene_.uploaded_instances = scene_.instances;
     void* instance_data = gpu_scene_.scene_instance_buffer->Map();
     std::memcpy(instance_data, scene_.instances.data(), sizeof(RenderInstance) * scene_.instances.size());
     gpu_scene_.scene_instance_buffer->Unmap();

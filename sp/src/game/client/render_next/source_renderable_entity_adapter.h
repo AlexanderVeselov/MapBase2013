@@ -9,8 +9,7 @@ class SourceRenderableEntityAdapter
 {
 public:
     void Reset();
-    void PopulateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache);
-    void UpdateRenderableEntities(RenderSceneCpu& scene);
+    void UpdateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache);
 
 private:
     struct RenderableEntity
@@ -23,9 +22,5 @@ private:
     };
 
 private:
-    void SetRenderableEntityVisibility(RenderSceneCpu& scene, RenderableEntity const& renderable_entity, uint32_t visibility);
-
-private:
     std::vector<RenderableEntity> renderable_entities_;
-    bool brush_entities_initialized_ = false;
 };
