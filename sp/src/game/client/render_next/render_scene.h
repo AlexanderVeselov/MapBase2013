@@ -95,7 +95,7 @@ struct RenderSceneGpu
     gpu::BufferPtr scene_vertex_color_buffer;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
-    std::vector<uint32_t> material_texture_ids;
+    std::vector<uint32_t> material_ids;
     std::vector<RenderInstance> uploaded_instances;
     std::array<uint32_t, 6> skybox_texture_ids = {};
     uint32_t instance_count = 0;

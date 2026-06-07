@@ -6,6 +6,7 @@
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
 #include "source_adapter.h"
+#include "source_material_manager.h"
 #include "texture_manager.h"
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
@@ -47,6 +48,7 @@ private:
     RenderSceneCpu scene_;
     RenderSceneGpu gpu_scene_;
     TextureManager texture_manager_;
+    SourceMaterialManager material_manager_;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;
 };
@@ -144,7 +146,8 @@ void RenderImpl::BuildCpuScene(char const* level_name)
 void RenderImpl::UploadSceneToGpu()
 {
     EnsureRenderCommandBuffer(backend_);
-    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, texture_manager_, gpu_scene_);
+    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
+        scene_, texture_manager_, material_manager_, gpu_scene_);
     UploadSkyboxTextures();
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_, texture_manager_);
@@ -230,7 +233,7 @@ void RenderImpl::UpdateRenderableEntities()
     std::memcpy(transform_data, scene_.transforms.data(), sizeof(SceneTransform) * scene_.transforms.size());
     gpu_scene_.scene_transform_buffer->Unmap();
 
-    gpu_scene_.uploaded_instances = BuildUploadedInstances(scene_, gpu_scene_.material_texture_ids);
+    gpu_scene_.uploaded_instances = BuildUploadedInstances(scene_, gpu_scene_.material_ids, material_manager_);
     gpu_scene_.instance_count = static_cast<uint32_t>(gpu_scene_.uploaded_instances.size());
 
     if (!gpu_scene_.uploaded_instances.empty())

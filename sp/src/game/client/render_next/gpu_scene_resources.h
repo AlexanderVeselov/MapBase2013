@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render_scene.h"
+#include "source_material_manager.h"
 #include "texture_manager.h"
 
 #include "gpu_buffer.hpp"
@@ -12,16 +13,18 @@
 #include <array>
 #include <unordered_map>
 
-std::vector<uint32_t> BuildMaterialTextureIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, TextureManager& texture_manager);
+std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene,
+    TextureManager& texture_manager, SourceMaterialManager& material_manager);
 
-std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_texture_ids);
+std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_ids,
+    SourceMaterialManager const& material_manager);
 
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
     TextureManager& texture_manager, RenderSceneGpu& out_gpu_scene);
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene, TextureManager& texture_manager,
-    RenderSceneGpu& out_gpu_scene);
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene,
+    TextureManager& texture_manager, SourceMaterialManager& material_manager, RenderSceneGpu& out_gpu_scene);
 

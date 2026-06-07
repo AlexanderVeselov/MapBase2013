@@ -14,6 +14,7 @@ set(CLIENT_RENDER_NEW_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/render_next/gpu_scene_resources.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/render_backend.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_adapter.cpp"
+    "${SOURCE_SDK_ROOT}/game/client/render_next/source_material_manager.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_renderable_entity_adapter.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_model_manager.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/texture_manager.cpp"

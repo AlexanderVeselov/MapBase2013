@@ -1,36 +1,13 @@
 #include "cbase.h"
 #include "gpu_scene_resources.h"
 
-#include "filesystem.h"
-#include "materialsystem/imaterial.h"
-#include "materialsystem/imaterialvar.h"
-#include "materialsystem/itexture.h"
-#include "texture_group_names.h"
-#include "tier1/utlbuffer.h"
-#include "vtf/vtf.h"
-
 #include <algorithm>
 #include <array>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
-extern IMaterialSystem* materials;
-
 namespace
 {
-constexpr uint32_t kMaxMaterialTextures = 512;
-
-std::string StripExtension(std::string path)
-{
-    size_t extension_pos = path.find_last_of('.');
-    if (extension_pos != std::string::npos)
-    {
-        path.erase(extension_pos);
-    }
-    return path;
-}
-
 gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height,
     gpu::ImageFormat format, void const* data, size_t data_size)
@@ -51,72 +28,6 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
     }
     return image;
 }
-
-IMaterial* FindNamedMaterial(char const* material_name)
-{
-    if (!material_name || material_name[0] == '\0')
-    {
-        return nullptr;
-    }
-
-    IMaterial* material = materials->FindMaterial(material_name, TEXTURE_GROUP_WORLD, false);
-    if (material && !IsErrorMaterial(material))
-    {
-        return material;
-    }
-
-    material = materials->FindMaterial(material_name, TEXTURE_GROUP_MODEL, false);
-    if (material && !IsErrorMaterial(material))
-    {
-        return material;
-    }
-
-    return nullptr;
-}
-
-bool ResolveBaseTextureName(char const* material_name, std::string& out_texture_name)
-{
-    if (!material_name || material_name[0] == '\0')
-    {
-        return false;
-    }
-
-    IMaterial* material = FindNamedMaterial(material_name);
-    if (!material)
-    {
-        return false;
-    }
-
-    bool found = false;
-    IMaterialVar* base_texture_var = material->FindVar("$basetexture", &found, false);
-    if (!found || !base_texture_var)
-    {
-        base_texture_var = material->FindVar("%tooltexture", &found, false);
-        if (!found || !base_texture_var)
-        {
-            return false;
-        }
-    }
-
-    ITexture* texture = base_texture_var->GetTextureValue();
-    if (texture && !texture->IsError())
-    {
-        out_texture_name = StripExtension(texture->GetName());
-        std::replace(out_texture_name.begin(), out_texture_name.end(), '\\', '/');
-        return !out_texture_name.empty();
-    }
-
-    char const* base_texture_name = base_texture_var->GetStringValue();
-    if (!base_texture_name[0])
-    {
-        return false;
-    }
-
-    out_texture_name = StripExtension(base_texture_name);
-    std::replace(out_texture_name.begin(), out_texture_name.end(), '\\', '/');
-    return !out_texture_name.empty();
-}
-
 }
 
 void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
@@ -181,35 +92,34 @@ void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer&
 
 }
 
-std::vector<uint32_t> BuildMaterialTextureIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, TextureManager& texture_manager)
+std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene,
+    TextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
-    std::vector<uint32_t> material_texture_ids(scene.materials.size() + 1, 0);
+    std::vector<uint32_t> material_ids(scene.materials.size() + 1, 0);
     for (size_t material_index = 0; material_index < scene.materials.size(); ++material_index)
     {
-        std::string base_texture_name;
-        if (ResolveBaseTextureName(scene.materials[material_index].material_name.c_str(), base_texture_name))
-        {
-            material_texture_ids[material_index + 1] =
-                texture_manager.LoadTexture(device, cmd_buffer, image_layouts, base_texture_name.c_str());
-        }
+        material_ids[material_index + 1] = material_manager.LoadMaterial(
+            device, cmd_buffer, image_layouts, texture_manager, scene.materials[material_index].material_name.c_str());
     }
 
-    return material_texture_ids;
+    return material_ids;
 }
 
-std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_texture_ids)
+std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_ids,
+    SourceMaterialManager const& material_manager)
 {
     std::vector<RenderInstance> upload_instances = scene.instances;
     for (RenderInstance& instance : upload_instances)
     {
-        if (instance.material_index >= material_texture_ids.size())
+        if (instance.material_index >= material_ids.size())
         {
             instance.material_index = 0;
         }
         else
         {
-            instance.material_index = material_texture_ids[instance.material_index];
+            instance.material_index =
+                material_manager.GetMaterial(material_ids[instance.material_index]).albedo_texture_id;
         }
 
         if (instance.transform_index >= scene.transforms.size())
@@ -236,8 +146,8 @@ std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, 
 }
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene, TextureManager& texture_manager,
-    RenderSceneGpu& out_gpu_scene)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene,
+    TextureManager& texture_manager, SourceMaterialManager& material_manager, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
     out_gpu_scene.EnsureFallbackSceneBuffers(device);
@@ -262,10 +172,10 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     std::memcpy(transform_data, scene.transforms.data(), sizeof(SceneTransform) * scene.transforms.size());
     out_gpu_scene.scene_transform_buffer->Unmap();
 
-    out_gpu_scene.material_texture_ids =
-        BuildMaterialTextureIds(device, cmd_buffer, image_layouts, scene, texture_manager);
+    out_gpu_scene.material_ids =
+        BuildMaterialIds(device, cmd_buffer, image_layouts, scene, texture_manager, material_manager);
     std::vector<RenderInstance> upload_instances =
-        BuildUploadedInstances(scene, out_gpu_scene.material_texture_ids);
+        BuildUploadedInstances(scene, out_gpu_scene.material_ids, material_manager);
     out_gpu_scene.instance_count = static_cast<uint32_t>(upload_instances.size());
     out_gpu_scene.uploaded_instances = upload_instances;
 
