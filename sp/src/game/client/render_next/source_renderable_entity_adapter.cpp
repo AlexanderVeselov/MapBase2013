@@ -31,17 +31,10 @@ bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
 }
 }
 
-void SourceRenderableEntityAdapter::Reset()
-{
-    renderable_entities_.clear();
-    logged_studio_entities_.clear();
-}
-
 void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache)
 {
     scene.transforms = build_cache.base_transforms;
     scene.instances = build_cache.base_instances;
-    renderable_entities_.clear();
 
     if (build_cache.brush_model_ranges.empty() || !cl_entitylist || !modelinfo)
     {
@@ -82,29 +75,30 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
         }
 
         modtype_t model_type = static_cast<modtype_t>(modelinfo->GetModelType(model));
+        uint32_t transform_index = 0;
+        uint32_t first_instance = 0;
+        uint32_t instance_count = 0;
+        int submodel_index = 0;
+
         if (model_type == mod_studio)
         {
-            if (logged_studio_entities_.insert(entity_index).second)
+            char const* model_name = modelinfo->GetModelName(model);
+            char const* class_name = "unknown";
+            IClientNetworkable* networkable = entity->GetClientNetworkable();
+            if (networkable)
             {
-                char const* model_name = modelinfo->GetModelName(model);
-                char const* class_name = "unknown";
-                IClientNetworkable* networkable = entity->GetClientNetworkable();
-                if (networkable)
+                ClientClass* client_class = networkable->GetClientClass();
+                if (client_class && client_class->m_pNetworkName)
                 {
-                    ClientClass* client_class = networkable->GetClientClass();
-                    if (client_class && client_class->m_pNetworkName)
-                    {
-                        class_name = client_class->m_pNetworkName;
-                    }
+                    class_name = client_class->m_pNetworkName;
                 }
-
-                Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
-                    model_name ? model_name : "<null>");
             }
+
+            Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
+                model_name ? model_name : "<null>");
         }
         else if (model_type == mod_brush)
         {
-            int submodel_index = 0;
             if (!TryParseBrushSubmodelIndex(modelinfo->GetModelName(model), submodel_index))
             {
                 continue;
@@ -118,11 +112,10 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
 
             matrix3x4_t model_to_world;
             AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
-            uint32_t transform_index = static_cast<uint32_t>(scene.transforms.size());
+            transform_index = static_cast<uint32_t>(scene.transforms.size());
             scene.transforms.push_back(MakeSceneTransform(model_to_world));
 
-            uint32_t first_instance = static_cast<uint32_t>(scene.instances.size());
-            uint32_t instance_count = 0;
+            first_instance = static_cast<uint32_t>(scene.instances.size());
             for (BrushModelSourceRange const* brush_range : submodel_it->second)
             {
                 if (!brush_range || brush_range->first_vertex > scene.vertices.size()
@@ -141,9 +134,6 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
                 scene.transforms.pop_back();
                 continue;
             }
-
-            renderable_entities_.push_back(
-                {entity_index, submodel_index, transform_index, first_instance, instance_count});
         }
     }
 }

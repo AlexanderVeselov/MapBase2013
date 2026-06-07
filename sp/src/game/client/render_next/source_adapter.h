@@ -21,7 +21,7 @@ public:
     void UpdateRenderableEntities(RenderSceneCpu& scene) override;
 
 private:
-    SourceRenderableEntityAdapter brush_entity_adapter_;
+    SourceRenderableEntityAdapter renderable_entity_adapter_;
     SourceWorldLoader world_loader_;
     SourceStaticPropLoader static_prop_loader_;
     SourceSceneBuildCache build_cache_;

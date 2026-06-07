@@ -133,10 +133,9 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_
     static_prop_loader_.AppendStaticProps(resolved_level_name, out_scene);
     build_cache_.base_transforms = out_scene.transforms;
     build_cache_.base_instances = out_scene.instances;
-    brush_entity_adapter_.Reset();
 }
 
 void SourceAdapter::UpdateRenderableEntities(RenderSceneCpu& scene)
 {
-    brush_entity_adapter_.UpdateRenderableEntities(scene, build_cache_);
+    renderable_entity_adapter_.UpdateRenderableEntities(scene, build_cache_);
 }
