@@ -78,7 +78,7 @@ void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
 
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
-    TextureManager& texture_manager, RenderSceneGpu& out_gpu_scene)
+    SourceTextureManager& texture_manager, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
     out_gpu_scene.EnsureFallbackSceneBuffers(device);
@@ -94,7 +94,7 @@ void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer&
 
 std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene,
-    TextureManager& texture_manager, SourceMaterialManager& material_manager)
+    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
     std::vector<uint32_t> material_ids(scene.materials.size() + 1, 0);
     for (size_t material_index = 0; material_index < scene.materials.size(); ++material_index)
@@ -147,7 +147,7 @@ std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, 
 
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene,
-    TextureManager& texture_manager, SourceMaterialManager& material_manager, RenderSceneGpu& out_gpu_scene)
+    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
     out_gpu_scene.EnsureFallbackSceneBuffers(device);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "texture_manager.h"
+#include "source_texture_manager.h"
 
 #include "gpu_command_buffer.hpp"
 #include "gpu_device.hpp"
@@ -20,7 +20,7 @@ class SourceMaterialManager
 {
 public:
     uint32_t LoadMaterial(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, TextureManager& texture_manager,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
         char const* material_name);
 
     Material const& GetMaterial(uint32_t material_id) const;

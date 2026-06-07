@@ -1,7 +1,7 @@
 #include "cbase.h"
 #include "source_world_loader.h"
 
-#include "bsp_loader.h"
+#include "../bsp_loader.h"
 #include "source_scene_utils.h"
 
 void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderSceneCpu& out_scene, SourceSceneBuildCache& out_cache) const

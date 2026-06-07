@@ -38,7 +38,7 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
 }
 
 void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderSceneGpu const& gpu_scene,
-    TextureManager const& texture_manager)
+    SourceTextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
     texture_manager.BuildDescriptorArray(kMaxMaterialTextures, image_descriptors);

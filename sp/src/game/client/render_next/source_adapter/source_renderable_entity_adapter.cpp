@@ -94,8 +94,8 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
                 }
             }
 
-            Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
-                model_name ? model_name : "<null>");
+            //Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
+            //    model_name ? model_name : "<null>");
         }
         else if (model_type == mod_brush)
         {

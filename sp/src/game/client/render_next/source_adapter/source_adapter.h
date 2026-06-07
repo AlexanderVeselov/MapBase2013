@@ -1,6 +1,6 @@
 #pragma once
 
-#include "engine_adapter.h"
+#include "../engine_adapter.h"
 #include "source_model_manager.h"
 #include "source_renderable_entity_adapter.h"
 #include "source_scene_cache.h"

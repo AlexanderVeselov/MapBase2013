@@ -7,7 +7,7 @@ constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
 void SkyRenderTask::Initialize(gpu::DevicePtr const& device, RenderBackendResources const& backend_resources,
-    RenderSceneGpu const& gpu_scene, TextureManager const& texture_manager)
+    RenderSceneGpu const& gpu_scene, SourceTextureManager const& texture_manager)
 {
     pipeline_ = device->CreateComputePipeline("render_sky.cs");
 
@@ -23,7 +23,7 @@ void SkyRenderTask::Initialize(gpu::DevicePtr const& device, RenderBackendResour
 }
 
 void SkyRenderTask::UpdateBindings(RenderBackendResources const& backend_resources, RenderSceneGpu const& gpu_scene,
-    TextureManager const& texture_manager)
+    SourceTextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
     texture_manager.BuildDescriptorArray(kMaxMaterialTextures, image_descriptors);

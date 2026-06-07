@@ -5,9 +5,9 @@
 #include "render_scene.h"
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
-#include "source_adapter.h"
-#include "source_material_manager.h"
-#include "texture_manager.h"
+#include "source_adapter/source_adapter.h"
+#include "source_adapter/source_material_manager.h"
+#include "source_adapter/source_texture_manager.h"
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
 #include "tasks/draw_scene_task.h"
@@ -47,7 +47,7 @@ private:
     CopyDepthTask copy_depth_task_;
     RenderSceneCpu scene_;
     RenderSceneGpu gpu_scene_;
-    TextureManager texture_manager_;
+    SourceTextureManager texture_manager_;
     SourceMaterialManager material_manager_;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;

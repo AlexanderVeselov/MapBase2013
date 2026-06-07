@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render_scene.h"
+#include "../render_scene.h"
 
 inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, uint32_t vertex_offset, uint32_t index_offset,
     uint32_t index_count, uint32_t material_index, uint32_t transform_index, float const* color = nullptr,

@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-class TextureManager
+class SourceTextureManager
 {
 public:
     uint32_t LoadTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,

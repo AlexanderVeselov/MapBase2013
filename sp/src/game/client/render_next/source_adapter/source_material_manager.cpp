@@ -97,7 +97,7 @@ void SourceMaterialManager::EnsureFallbackMaterial()
 }
 
 uint32_t SourceMaterialManager::LoadMaterial(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, TextureManager& texture_manager, char const* material_name)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager, char const* material_name)
 {
     EnsureFallbackMaterial();
 

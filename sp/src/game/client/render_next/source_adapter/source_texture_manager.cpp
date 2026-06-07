@@ -1,5 +1,5 @@
 #include "cbase.h"
-#include "texture_manager.h"
+#include "source_texture_manager.h"
 
 #include "filesystem.h"
 #include "tier1/utlbuffer.h"
@@ -105,7 +105,7 @@ bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels,
 }
 }
 
-void TextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+void SourceTextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts)
 {
     if (!textures_.empty() && textures_[0])
@@ -127,7 +127,7 @@ void TextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, gpu::Co
     }
 }
 
-uint32_t TextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+uint32_t SourceTextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name)
 {
     EnsureFallbackTexture(device, cmd_buffer, image_layouts);
@@ -160,7 +160,7 @@ uint32_t TextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::CommandB
     return texture_id;
 }
 
-gpu::ImagePtr const& TextureManager::GetTexture(uint32_t texture_id) const
+gpu::ImagePtr const& SourceTextureManager::GetTexture(uint32_t texture_id) const
 {
     if (textures_.empty())
     {
@@ -176,7 +176,7 @@ gpu::ImagePtr const& TextureManager::GetTexture(uint32_t texture_id) const
     return textures_[texture_id];
 }
 
-void TextureManager::BuildDescriptorArray(uint32_t count, std::vector<gpu::ImageDescriptor>& out_descriptors) const
+void SourceTextureManager::BuildDescriptorArray(uint32_t count, std::vector<gpu::ImageDescriptor>& out_descriptors) const
 {
     out_descriptors.resize(count);
     for (uint32_t texture_index = 0; texture_index < count; ++texture_index)

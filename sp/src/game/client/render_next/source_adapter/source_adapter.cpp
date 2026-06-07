@@ -1,7 +1,7 @@
 #include "cbase.h"
 #include "source_adapter.h"
 
-#include "bsp_loader.h"
+#include "../bsp_loader.h"
 #include "engine/ivmodelinfo.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialsystemhardwareconfig.h"
