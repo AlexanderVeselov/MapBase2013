@@ -34,6 +34,7 @@ bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
 void SourceRenderableEntityAdapter::Reset()
 {
     renderable_entities_.clear();
+    logged_studio_entities_.clear();
 }
 
 void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache)
@@ -75,45 +76,74 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
         }
 
         model_t const* model = renderable->GetModel();
-        int submodel_index = 0;
-        if (!model || modelinfo->GetModelType(model) != mod_brush
-            || !TryParseBrushSubmodelIndex(modelinfo->GetModelName(model), submodel_index))
+        if (!model)
         {
             continue;
         }
 
-        auto submodel_it = brush_range_lookup.find(submodel_index);
-        if (submodel_it == brush_range_lookup.end() || submodel_it->second.empty())
+        modtype_t model_type = static_cast<modtype_t>(modelinfo->GetModelType(model));
+        if (model_type == mod_studio)
         {
-            continue;
+            if (logged_studio_entities_.insert(entity_index).second)
+            {
+                char const* model_name = modelinfo->GetModelName(model);
+                char const* class_name = "unknown";
+                IClientNetworkable* networkable = entity->GetClientNetworkable();
+                if (networkable)
+                {
+                    ClientClass* client_class = networkable->GetClientClass();
+                    if (client_class && client_class->m_pNetworkName)
+                    {
+                        class_name = client_class->m_pNetworkName;
+                    }
+                }
+
+                Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
+                    model_name ? model_name : "<null>");
+            }
         }
-
-        matrix3x4_t model_to_world;
-        AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
-        uint32_t transform_index = static_cast<uint32_t>(scene.transforms.size());
-        scene.transforms.push_back(MakeSceneTransform(model_to_world));
-
-        uint32_t first_instance = static_cast<uint32_t>(scene.instances.size());
-        uint32_t instance_count = 0;
-        for (BrushModelSourceRange const* brush_range : submodel_it->second)
+        else if (model_type == mod_brush)
         {
-            if (!brush_range || brush_range->first_vertex > scene.vertices.size()
-                || brush_range->first_index + brush_range->index_count > scene.indices.size())
+            int submodel_index = 0;
+            if (!TryParseBrushSubmodelIndex(modelinfo->GetModelName(model), submodel_index))
             {
                 continue;
             }
 
-            AddRenderInstance(scene.instances, brush_range->first_vertex, brush_range->first_index, brush_range->index_count,
-                brush_range->material_index, transform_index);
-            ++instance_count;
-        }
+            auto submodel_it = brush_range_lookup.find(submodel_index);
+            if (submodel_it == brush_range_lookup.end() || submodel_it->second.empty())
+            {
+                continue;
+            }
 
-        if (instance_count == 0)
-        {
-            scene.transforms.pop_back();
-            continue;
-        }
+            matrix3x4_t model_to_world;
+            AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
+            uint32_t transform_index = static_cast<uint32_t>(scene.transforms.size());
+            scene.transforms.push_back(MakeSceneTransform(model_to_world));
 
-        renderable_entities_.push_back({entity_index, submodel_index, transform_index, first_instance, instance_count});
+            uint32_t first_instance = static_cast<uint32_t>(scene.instances.size());
+            uint32_t instance_count = 0;
+            for (BrushModelSourceRange const* brush_range : submodel_it->second)
+            {
+                if (!brush_range || brush_range->first_vertex > scene.vertices.size()
+                    || brush_range->first_index + brush_range->index_count > scene.indices.size())
+                {
+                    continue;
+                }
+
+                AddRenderInstance(scene.instances, brush_range->first_vertex, brush_range->first_index,
+                    brush_range->index_count, brush_range->material_index, transform_index);
+                ++instance_count;
+            }
+
+            if (instance_count == 0)
+            {
+                scene.transforms.pop_back();
+                continue;
+            }
+
+            renderable_entities_.push_back(
+                {entity_index, submodel_index, transform_index, first_instance, instance_count});
+        }
     }
 }

@@ -205,12 +205,16 @@ void RenderImpl::UpdateRenderableEntities()
     if (!scene_.transforms.empty())
     {
         uint64_t required_transform_buffer_size = static_cast<uint64_t>(sizeof(SceneTransform)) * scene_.transforms.size();
-        if (!gpu_scene_.scene_transform_buffer || gpu_scene_.scene_transform_buffer->GetSize() < required_transform_buffer_size)
+        if (!gpu_scene_.scene_transform_buffer)
         {
             gpu_scene_.scene_transform_buffer = backend_.device->CreateBuffer(required_transform_buffer_size, sizeof(SceneTransform),
                 gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-            draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
             Msg("Updated scene transform buffer to size %llu bytes for %u transforms\n", required_transform_buffer_size, static_cast<uint32_t>(scene_.transforms.size()));
+        }
+        else if (gpu_scene_.scene_transform_buffer->GetSize() < required_transform_buffer_size)
+        {
+            gpu_scene_.scene_transform_buffer->Resize(required_transform_buffer_size);
+            Msg("Resized scene transform buffer to size %llu bytes for %u transforms\n", required_transform_buffer_size, static_cast<uint32_t>(scene_.transforms.size()));
         }
     }
 
@@ -229,12 +233,16 @@ void RenderImpl::UpdateRenderableEntities()
     if (!scene_.instances.empty())
     {
         uint64_t required_instance_buffer_size = static_cast<uint64_t>(sizeof(RenderInstance)) * scene_.instances.size();
-        if (!gpu_scene_.scene_instance_buffer || gpu_scene_.scene_instance_buffer->GetSize() < required_instance_buffer_size)
+        if (!gpu_scene_.scene_instance_buffer)
         {
             gpu_scene_.scene_instance_buffer = backend_.device->CreateBuffer(required_instance_buffer_size, sizeof(RenderInstance),
                 gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-            draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
             Msg("Updated scene instance buffer to size %llu bytes for %u instances\n", required_instance_buffer_size, gpu_scene_.instance_count);
+        }
+        else if (gpu_scene_.scene_instance_buffer->GetSize() < required_instance_buffer_size)
+        {
+            gpu_scene_.scene_instance_buffer->Resize(required_instance_buffer_size);
+            Msg("Resized scene instance buffer to size %llu bytes for %u instances\n", required_instance_buffer_size, gpu_scene_.instance_count);
         }
     }
 

@@ -3,6 +3,7 @@
 #include "render_scene.h"
 #include "source_scene_cache.h"
 
+#include <unordered_set>
 #include <vector>
 
 class SourceRenderableEntityAdapter
@@ -23,4 +24,5 @@ private:
 
 private:
     std::vector<RenderableEntity> renderable_entities_;
+    std::unordered_set<int> logged_studio_entities_;
 };
