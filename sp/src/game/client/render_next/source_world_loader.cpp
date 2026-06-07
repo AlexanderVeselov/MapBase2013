@@ -11,7 +11,7 @@ void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderSceneCpu& o
     out_scene.transforms.push_back(MakeIdentitySceneTransform());
 
     std::vector<MeshSourceRange> world_mesh_ranges;
-    LoadBsp(level_name, out_scene.vertices, out_scene.indices, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges,
+    LoadBsp(level_name, out_scene.geometry, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges,
         out_cache.brush_model_ranges);
 
     for (MeshSourceRange const& mesh_range : world_mesh_ranges)

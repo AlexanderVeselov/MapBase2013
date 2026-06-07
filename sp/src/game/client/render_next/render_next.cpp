@@ -6,6 +6,7 @@
 #include "gpu_scene_resources.h"
 #include "render_backend.h"
 #include "source_adapter.h"
+#include "texture_manager.h"
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
 #include "tasks/draw_scene_task.h"
@@ -45,6 +46,7 @@ private:
     CopyDepthTask copy_depth_task_;
     RenderSceneCpu scene_;
     RenderSceneGpu gpu_scene_;
+    TextureManager texture_manager_;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;
 };
@@ -82,15 +84,16 @@ void RenderImpl::Init()
 {
     InitializeRenderBackend(__FILE__, backend_, backend_resources_, gpu_scene_);
     EnsureRenderCommandBuffer(backend_);
+    texture_manager_.LoadTexture(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, "");
     gpu_scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
     gpu_scene_.EnsureFallbackSceneBuffers(backend_.device);
-    sky_render_task_.Initialize(backend_.device, backend_resources_, gpu_scene_);
+    sky_render_task_.Initialize(backend_.device, backend_resources_, gpu_scene_, texture_manager_);
     draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, gpu_scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
     UploadSkyboxTextures();
     SubmitRenderCommandsAndWait(backend_);
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
-    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_, texture_manager_);
+    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_, texture_manager_);
     render_graph_.Reset();
     render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_scene_task_);
@@ -121,7 +124,7 @@ void RenderImpl::ReloadPipelines()
     }
 
     gpu::PipelineReloadResult result = backend_.device->ReloadPipelines();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_, texture_manager_);
 
     if (result.success)
     {
@@ -141,10 +144,10 @@ void RenderImpl::BuildCpuScene(char const* level_name)
 void RenderImpl::UploadSceneToGpu()
 {
     EnsureRenderCommandBuffer(backend_);
-    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, gpu_scene_);
+    UploadRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, scene_, texture_manager_, gpu_scene_);
     UploadSkyboxTextures();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_);
-    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, gpu_scene_, texture_manager_);
+    sky_render_task_.UpdateBindings(backend_resources_, gpu_scene_, texture_manager_);
     SubmitRenderCommandsAndWait(backend_);
 }
 
@@ -152,7 +155,7 @@ void RenderImpl::UploadSkyboxTextures()
 {
     std::array<std::string, 6> skybox_texture_names;
     engine_adapter_.GetSkyboxTextureNames(skybox_texture_names);
-    UploadSkyboxTexturesToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, skybox_texture_names, gpu_scene_);
+    UploadSkyboxTexturesToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts, skybox_texture_names, texture_manager_, gpu_scene_);
 }
 
 void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
@@ -183,7 +186,7 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
 void RenderImpl::DrawScene()
 {
-    RenderTaskContext task_context{backend_, backend_resources_, gpu_scene_, viewport_width_, viewport_height_};
+    RenderTaskContext task_context{backend_, backend_resources_, scene_, gpu_scene_, viewport_width_, viewport_height_};
     render_graph_.Execute(task_context);
 }
 
@@ -227,12 +230,13 @@ void RenderImpl::UpdateRenderableEntities()
     std::memcpy(transform_data, scene_.transforms.data(), sizeof(SceneTransform) * scene_.transforms.size());
     gpu_scene_.scene_transform_buffer->Unmap();
 
-    gpu_scene_.uploaded_instances = scene_.instances;
-    gpu_scene_.instance_count = static_cast<uint32_t>(scene_.instances.size());
+    gpu_scene_.uploaded_instances = BuildUploadedInstances(scene_, gpu_scene_.material_texture_ids);
+    gpu_scene_.instance_count = static_cast<uint32_t>(gpu_scene_.uploaded_instances.size());
 
-    if (!scene_.instances.empty())
+    if (!gpu_scene_.uploaded_instances.empty())
     {
-        uint64_t required_instance_buffer_size = static_cast<uint64_t>(sizeof(RenderInstance)) * scene_.instances.size();
+        uint64_t required_instance_buffer_size =
+            static_cast<uint64_t>(sizeof(RenderInstance)) * gpu_scene_.uploaded_instances.size();
         if (!gpu_scene_.scene_instance_buffer)
         {
             gpu_scene_.scene_instance_buffer = backend_.device->CreateBuffer(required_instance_buffer_size, sizeof(RenderInstance),
@@ -246,13 +250,14 @@ void RenderImpl::UpdateRenderableEntities()
         }
     }
 
-    if (!gpu_scene_.scene_instance_buffer || scene_.instances.empty())
+    if (!gpu_scene_.scene_instance_buffer || gpu_scene_.uploaded_instances.empty())
     {
         return;
     }
 
     void* instance_data = gpu_scene_.scene_instance_buffer->Map();
-    std::memcpy(instance_data, scene_.instances.data(), sizeof(RenderInstance) * scene_.instances.size());
+    std::memcpy(instance_data, gpu_scene_.uploaded_instances.data(),
+        sizeof(RenderInstance) * gpu_scene_.uploaded_instances.size());
     gpu_scene_.scene_instance_buffer->Unmap();
 }
 

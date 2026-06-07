@@ -803,12 +803,11 @@ struct BspGeometryBuilder
     }
 };
 
-void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<uint32_t>& out_indices, std::vector<RenderMaterial>& out_materials,
+void LoadBsp(char const* filename, GeometryManager<Vertex, uint32_t>& out_geometry, std::vector<RenderMaterial>& out_materials,
     LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
     std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
-    out_indices.clear();
     out_world_mesh_ranges.clear();
     out_brush_model_ranges.clear();
     InitializeFallbackLightmapAtlas(out_lightmap_atlas);
@@ -834,11 +833,13 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
         return;
     }
 
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
     BspGeometryBuilder geometry_builder{
         bsp,
         face_lightmap_rects,
-        out_vertices,
-        out_indices,
+        vertices,
+        indices,
         out_materials,
         out_lightmap_atlas,
         {}
@@ -849,6 +850,8 @@ void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vecto
     {
         geometry_builder.BuildBrushModelGeometry(submodel_index, out_brush_model_ranges);
     }
+
+    out_geometry.Append(vertices, indices);
 }
 
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props)

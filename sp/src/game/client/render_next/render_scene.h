@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bsp_loader.h"
+#include "geometry_manager.h"
 
 #include "gpu_buffer.hpp"
 #include "gpu_command_buffer.hpp"
@@ -80,8 +81,7 @@ struct VertexColorData
 struct RenderSceneCpu
 {
     std::vector<SceneTransform> transforms;
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    GeometryManager<Vertex, uint32_t> geometry;
     std::vector<VertexColorData> vertex_colors;
     std::vector<RenderMaterial> materials;
     std::vector<RenderInstance> instances;
@@ -90,18 +90,14 @@ struct RenderSceneCpu
 
 struct RenderSceneGpu
 {
-    gpu::BufferPtr vertex_buffer;
-    gpu::BufferPtr index_buffer;
     gpu::BufferPtr scene_transform_buffer;
     gpu::BufferPtr scene_instance_buffer;
     gpu::BufferPtr scene_vertex_color_buffer;
-    gpu::ImagePtr fallback_texture;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
-    std::vector<gpu::ImagePtr> material_textures;
+    std::vector<uint32_t> material_texture_ids;
     std::vector<RenderInstance> uploaded_instances;
     std::array<uint32_t, 6> skybox_texture_ids = {};
-    uint32_t vertex_count = 0;
     uint32_t instance_count = 0;
 
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,

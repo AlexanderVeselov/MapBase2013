@@ -4,7 +4,7 @@
 
 inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, uint32_t vertex_offset, uint32_t index_offset,
     uint32_t index_count, uint32_t material_index, uint32_t transform_index, float const* color = nullptr,
-    uint32_t vertex_color_offset = RenderInstance::kInvalidVertexColorOffset)
+    uint32_t vertex_color_offset = RenderInstance::kInvalidVertexColorOffset, uint32_t vertex_count = 0)
 {
     RenderInstance instance = {};
     instance.vertex_offset = vertex_offset;
@@ -14,6 +14,7 @@ inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, ui
     instance.transform_index = transform_index;
     instance.vertex_color_offset = vertex_color_offset;
     instance.is_visible = RenderInstance::kVisible;
+    instance.padding0 = vertex_count;
     if (color)
     {
         instance.color[0] = color[0];

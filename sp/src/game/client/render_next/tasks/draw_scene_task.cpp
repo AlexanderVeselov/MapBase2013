@@ -37,16 +37,11 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     descriptor_set_ = pipeline_->CreateDescriptorSet();
 }
 
-void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderSceneGpu const& gpu_scene)
+void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderSceneGpu const& gpu_scene,
+    TextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
-    for (uint32_t texture_index = 0; texture_index < kMaxMaterialTextures; ++texture_index)
-    {
-        gpu::ImagePtr const& image = texture_index < gpu_scene.material_textures.size() && gpu_scene.material_textures[texture_index]
-            ? gpu_scene.material_textures[texture_index]
-            : gpu_scene.fallback_texture;
-        image_descriptors[texture_index] = gpu::ImageDescriptor{image.get(), {}};
-    }
+    texture_manager.BuildDescriptorArray(kMaxMaterialTextures, image_descriptors);
 
     descriptor_set_->Clear();
     descriptor_set_->BindBuffer(*view_proj_buffer, 0);
@@ -70,15 +65,17 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
     context.backend.cmd_buffer->SetRenderTarget(context.backend_resources.color_texture, context.backend_resources.depth_texture);
     context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
-    if (!context.gpu_scene.vertex_buffer || context.gpu_scene.instance_count == 0)
+    gpu::BufferPtr const& vertex_buffer = context.scene.geometry.VertexBuffer();
+    gpu::BufferPtr const& index_buffer = context.scene.geometry.IndexBuffer();
+    if (!vertex_buffer || !index_buffer || context.gpu_scene.instance_count == 0)
     {
         return;
     }
 
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
-    context.backend.cmd_buffer->SetVertexBuffer(context.gpu_scene.vertex_buffer, sizeof(Vertex));
-    context.backend.cmd_buffer->SetIndexBuffer(context.gpu_scene.index_buffer);
+    context.backend.cmd_buffer->SetVertexBuffer(vertex_buffer, sizeof(Vertex));
+    context.backend.cmd_buffer->SetIndexBuffer(index_buffer);
     for (uint32_t instance_index = 0; instance_index < context.gpu_scene.uploaded_instances.size(); ++instance_index)
     {
         RenderInstance const& instance = context.gpu_scene.uploaded_instances[instance_index];

@@ -1,6 +1,7 @@
 #include "cbase.h"
 #include "source_adapter.h"
 
+#include "bsp_loader.h"
 #include "engine/ivmodelinfo.h"
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialsystemhardwareconfig.h"
@@ -130,7 +131,21 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_
 {
     char const* resolved_level_name = (level_name && level_name[0]) ? level_name : GetLevelName();
     world_loader_.BuildBaseScene(resolved_level_name, out_scene, build_cache_);
-    static_prop_loader_.AppendStaticProps(resolved_level_name, out_scene);
+
+    std::vector<StaticPropInstance> static_props;
+    LoadStaticProps(resolved_level_name, static_props);
+    if (!static_props.empty())
+    {
+        std::vector<SourceModelPlacement> model_placements;
+        model_placements.reserve(static_props.size());
+        for (StaticPropInstance const& static_prop : static_props)
+        {
+            model_placements.push_back({static_prop.model_name, static_prop.origin, static_prop.angles, static_prop.skin});
+        }
+
+        model_manager_.AppendModelPlacements(model_placements, out_scene);
+    }
+
     build_cache_.base_transforms = out_scene.transforms;
     build_cache_.base_instances = out_scene.instances;
 }

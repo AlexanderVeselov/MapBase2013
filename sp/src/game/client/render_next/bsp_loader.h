@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mathlib/mathlib.h"
+#include "geometry_manager.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -59,7 +60,7 @@ struct BrushModelSourceRange
     uint32_t material_index = 0;
 };
 
-void LoadBsp(char const* filename, std::vector<Vertex>& out_vertices, std::vector<uint32_t>& out_indices, std::vector<RenderMaterial>& out_materials,
+void LoadBsp(char const* filename, GeometryManager<Vertex, uint32_t>& out_geometry, std::vector<RenderMaterial>& out_materials,
     LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
     std::vector<BrushModelSourceRange>& out_brush_model_ranges);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);

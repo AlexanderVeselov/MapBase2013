@@ -118,8 +118,8 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
             first_instance = static_cast<uint32_t>(scene.instances.size());
             for (BrushModelSourceRange const* brush_range : submodel_it->second)
             {
-                if (!brush_range || brush_range->first_vertex > scene.vertices.size()
-                    || brush_range->first_index + brush_range->index_count > scene.indices.size())
+                if (!brush_range || brush_range->first_vertex > scene.geometry.VertexCount()
+                    || brush_range->first_index + brush_range->index_count > scene.geometry.IndexCount())
                 {
                     continue;
                 }

@@ -21,11 +21,6 @@ namespace
 {
 constexpr uint32_t kMaxMaterialTextures = 512;
 
-std::array<uint8_t, 16> MakeFallbackTexturePixels()
-{
-    return {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
-}
-
 std::string StripExtension(std::string path)
 {
     size_t extension_pos = path.find_last_of('.');
@@ -36,28 +31,24 @@ std::string StripExtension(std::string path)
     return path;
 }
 
-void TransitionImage(gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
-    gpu::ImagePtr const& image, gpu::ImageLayout desired_layout)
-{
-    gpu::ImageLayout& current_layout = image_layouts[image.get()];
-    if (current_layout == desired_layout)
-    {
-        return;
-    }
-
-    cmd_buffer.TransitionBarrier(image, current_layout, desired_layout);
-    current_layout = desired_layout;
-}
-
 gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height,
     gpu::ImageFormat format, void const* data, size_t data_size)
 {
     gpu::ImagePtr image =
         device->CreateImage(width, height, format, gpu::ImageFlags::kShaderResource);
-    TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kCopyDst);
+    gpu::ImageLayout& current_layout = image_layouts[image.get()];
+    if (current_layout != gpu::ImageLayout::kCopyDst)
+    {
+        cmd_buffer.TransitionBarrier(image, current_layout, gpu::ImageLayout::kCopyDst);
+        current_layout = gpu::ImageLayout::kCopyDst;
+    }
     cmd_buffer.UploadImage(image, data, data_size);
-    TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kShaderRead);
+    if (current_layout != gpu::ImageLayout::kShaderRead)
+    {
+        cmd_buffer.TransitionBarrier(image, current_layout, gpu::ImageLayout::kShaderRead);
+        current_layout = gpu::ImageLayout::kShaderRead;
+    }
     return image;
 }
 
@@ -126,151 +117,11 @@ bool ResolveBaseTextureName(char const* material_name, std::string& out_texture_
     return !out_texture_name.empty();
 }
 
-bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels, uint32_t& out_width, uint32_t& out_height)
-{
-    if (!texture_name || texture_name[0] == '\0')
-    {
-        return false;
-    }
-
-    std::string vtf_path = "materials/" + StripExtension(texture_name) + ".vtf";
-    CUtlBuffer buffer;
-    if (!g_pFullFileSystem->ReadFile(vtf_path.c_str(), "GAME", buffer))
-    {
-        return false;
-    }
-
-    IVTFTexture* vtf_texture = CreateVTFTexture();
-    if (!vtf_texture)
-    {
-        return false;
-    }
-
-    bool success = false;
-    do
-    {
-        if (!vtf_texture->Unserialize(buffer))
-        {
-            break;
-        }
-
-        int width = vtf_texture->Width();
-        int height = vtf_texture->Height();
-        if (width <= 0 || height <= 0)
-        {
-            break;
-        }
-
-        constexpr ::ImageFormat kDstFormat = IMAGE_FORMAT_RGBA8888;
-        size_t image_size = static_cast<size_t>(ImageLoader::GetMemRequired(width, height, 1, kDstFormat, false));
-        out_pixels.resize(image_size);
-
-        if (!ImageLoader::ConvertImageFormat(vtf_texture->ImageData(0, 0, 0), vtf_texture->Format(), out_pixels.data(),
-                kDstFormat, width, height, 0, 0))
-        {
-            out_pixels.clear();
-            break;
-        }
-
-        out_width = static_cast<uint32_t>(width);
-        out_height = static_cast<uint32_t>(height);
-        success = true;
-    } while (false);
-
-    DestroyVTFTexture(vtf_texture);
-    return success;
-}
-
-gpu::ImagePtr LoadTextureImageInternal(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name)
-{
-    std::vector<uint8_t> rgba_pixels;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    if (!LoadTextureRgba(texture_name, rgba_pixels, width, height))
-    {
-        return {};
-    }
-
-    return CreateTextureImage(device, cmd_buffer, image_layouts, width, height, gpu::ImageFormat::kRGBA8_UNorm,
-        rgba_pixels.data(), rgba_pixels.size());
-}
-
-void UploadVertices(gpu::DevicePtr const& device, std::vector<Vertex> const& vertices, RenderSceneGpu& out_gpu_scene)
-{
-    out_gpu_scene.vertex_count = static_cast<uint32_t>(vertices.size());
-    out_gpu_scene.vertex_buffer = device->CreateBuffer(sizeof(Vertex) * vertices.size(), sizeof(Vertex),
-        gpu::BufferFlags::kCpuAccess);
-
-    if (!vertices.empty())
-    {
-        void* mapped_data = out_gpu_scene.vertex_buffer->Map();
-        std::memcpy(mapped_data, vertices.data(), sizeof(Vertex) * vertices.size());
-        out_gpu_scene.vertex_buffer->Unmap();
-    }
-}
-
-void UploadIndices(gpu::DevicePtr const& device, std::vector<uint32_t> const& indices, RenderSceneGpu& out_gpu_scene)
-{
-    out_gpu_scene.index_buffer = device->CreateBuffer(sizeof(uint32_t) * indices.size(), sizeof(uint32_t),
-        gpu::BufferFlags::kCpuAccess);
-
-    if (!indices.empty())
-    {
-        void* mapped_data = out_gpu_scene.index_buffer->Map();
-        std::memcpy(mapped_data, indices.data(), sizeof(uint32_t) * indices.size());
-        out_gpu_scene.index_buffer->Unmap();
-    }
-}
-
-void BuildMaterialResources(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::vector<RenderMaterial> const& scene_materials,
-    gpu::ImagePtr const& fallback_texture, RenderSceneGpu& out_gpu_scene)
-{
-    out_gpu_scene.material_textures.clear();
-    out_gpu_scene.material_textures.resize(scene_materials.size() + 1);
-    out_gpu_scene.material_textures[0] = fallback_texture;
-
-    for (size_t material_index = 0; material_index < scene_materials.size(); ++material_index)
-    {
-        if (material_index + 1 >= kMaxMaterialTextures)
-        {
-            break;
-        }
-
-        std::string base_texture_name;
-        gpu::ImagePtr texture_image = fallback_texture;
-        if (ResolveBaseTextureName(scene_materials[material_index].material_name.c_str(), base_texture_name))
-        {
-            gpu::ImagePtr loaded_texture = LoadTextureImageInternal(device, cmd_buffer, image_layouts, base_texture_name.c_str());
-            if (loaded_texture)
-            {
-                texture_image = std::move(loaded_texture);
-            }
-        }
-
-        out_gpu_scene.material_textures[material_index + 1] = texture_image;
-    }
-}
-
-}
-
-gpu::ImagePtr LoadTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name)
-{
-    return LoadTextureImageInternal(device, cmd_buffer, image_layouts, texture_name);
 }
 
 void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts)
 {
-    if (!fallback_texture)
-    {
-        std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
-        fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, gpu::ImageFormat::kRGBA8_UNorm,
-            fallback_pixels.data(), fallback_pixels.size());
-    }
-
     if (!fallback_lightmap_texture)
     {
         std::array<uint8_t, 4> fallback_lightmap_pixels = {255, 255, 255, 255};
@@ -282,15 +133,6 @@ void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::C
 
 void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
 {
-    if (!index_buffer)
-    {
-        uint32_t fallback_index = 0;
-        index_buffer = device->CreateBuffer(sizeof(uint32_t), sizeof(uint32_t), gpu::BufferFlags::kCpuAccess);
-        void* index_data = index_buffer->Map();
-        std::memcpy(index_data, &fallback_index, sizeof(uint32_t));
-        index_buffer->Unmap();
-    }
-
     if (!scene_transform_buffer)
     {
         SceneTransform identity_transform = MakeIdentitySceneTransform();
@@ -325,47 +167,77 @@ void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
 
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
-    RenderSceneGpu& out_gpu_scene)
+    TextureManager& texture_manager, RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
     out_gpu_scene.EnsureFallbackSceneBuffers(device);
 
-    if (out_gpu_scene.material_textures.empty())
-    {
-        out_gpu_scene.material_textures.push_back(out_gpu_scene.fallback_texture);
-    }
-    else
-    {
-        out_gpu_scene.material_textures[0] = out_gpu_scene.fallback_texture;
-    }
-
     out_gpu_scene.skybox_texture_ids.fill(0);
     for (size_t face_index = 0; face_index < skybox_texture_names.size(); ++face_index)
     {
-        if (out_gpu_scene.material_textures.size() >= kMaxMaterialTextures)
-        {
-            out_gpu_scene.skybox_texture_ids[face_index] = 0;
-            continue;
-        }
-
-        gpu::ImagePtr sky_face = out_gpu_scene.fallback_texture;
-        if (!skybox_texture_names[face_index].empty())
-        {
-            gpu::ImagePtr loaded_texture = LoadTextureImageInternal(device, cmd_buffer, image_layouts, skybox_texture_names[face_index].c_str());
-            if (loaded_texture)
-            {
-                sky_face = std::move(loaded_texture);
-            }
-        }
-
-        out_gpu_scene.skybox_texture_ids[face_index] = static_cast<uint32_t>(out_gpu_scene.material_textures.size());
-        out_gpu_scene.material_textures.push_back(std::move(sky_face));
+        out_gpu_scene.skybox_texture_ids[face_index] =
+            texture_manager.LoadTexture(device, cmd_buffer, image_layouts, skybox_texture_names[face_index].c_str());
     }
 
 }
 
+std::vector<uint32_t> BuildMaterialTextureIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, TextureManager& texture_manager)
+{
+    std::vector<uint32_t> material_texture_ids(scene.materials.size() + 1, 0);
+    for (size_t material_index = 0; material_index < scene.materials.size(); ++material_index)
+    {
+        std::string base_texture_name;
+        if (ResolveBaseTextureName(scene.materials[material_index].material_name.c_str(), base_texture_name))
+        {
+            material_texture_ids[material_index + 1] =
+                texture_manager.LoadTexture(device, cmd_buffer, image_layouts, base_texture_name.c_str());
+        }
+    }
+
+    return material_texture_ids;
+}
+
+std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_texture_ids)
+{
+    std::vector<RenderInstance> upload_instances = scene.instances;
+    for (RenderInstance& instance : upload_instances)
+    {
+        if (instance.material_index >= material_texture_ids.size())
+        {
+            instance.material_index = 0;
+        }
+        else
+        {
+            instance.material_index = material_texture_ids[instance.material_index];
+        }
+
+        if (instance.transform_index >= scene.transforms.size())
+        {
+            instance.transform_index = 0;
+        }
+        if (instance.index_offset + instance.index_count > scene.geometry.IndexCount())
+        {
+            instance.index_offset = 0;
+            instance.index_count = 0;
+        }
+        if (instance.vertex_color_offset != RenderInstance::kInvalidVertexColorOffset
+            && instance.index_count > 0)
+        {
+            uint32_t required_vertex_color_count = instance.padding0;
+            if (instance.vertex_color_offset + required_vertex_color_count > scene.vertex_colors.size())
+            {
+                instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+            }
+        }
+    }
+
+    return upload_instances;
+}
+
 void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene, RenderSceneGpu& out_gpu_scene)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene, TextureManager& texture_manager,
+    RenderSceneGpu& out_gpu_scene)
 {
     out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
     out_gpu_scene.EnsureFallbackSceneBuffers(device);
@@ -390,39 +262,11 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     std::memcpy(transform_data, scene.transforms.data(), sizeof(SceneTransform) * scene.transforms.size());
     out_gpu_scene.scene_transform_buffer->Unmap();
 
-    std::vector<RenderInstance> upload_instances = scene.instances;
+    out_gpu_scene.material_texture_ids =
+        BuildMaterialTextureIds(device, cmd_buffer, image_layouts, scene, texture_manager);
+    std::vector<RenderInstance> upload_instances =
+        BuildUploadedInstances(scene, out_gpu_scene.material_texture_ids);
     out_gpu_scene.instance_count = static_cast<uint32_t>(upload_instances.size());
-    for (RenderInstance& instance : upload_instances)
-    {
-        if (instance.material_index >= kMaxMaterialTextures || instance.material_index >= scene.materials.size() + 1)
-        {
-            instance.material_index = 0;
-        }
-        if (instance.transform_index >= scene.transforms.size())
-        {
-            instance.transform_index = 0;
-        }
-        if (instance.index_offset + instance.index_count > scene.indices.size())
-        {
-            instance.index_offset = 0;
-            instance.index_count = 0;
-        }
-        if (instance.vertex_color_offset != RenderInstance::kInvalidVertexColorOffset
-            && instance.index_count > 0)
-        {
-            uint32_t required_vertex_color_count = 0;
-            for (uint32_t index = 0; index < instance.index_count; ++index)
-            {
-                uint32_t local_vertex_index = scene.indices[instance.index_offset + index];
-                required_vertex_color_count = (std::max)(required_vertex_color_count, local_vertex_index + 1);
-            }
-
-            if (instance.vertex_color_offset + required_vertex_color_count > scene.vertex_colors.size())
-            {
-                instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
-            }
-        }
-    }
     out_gpu_scene.uploaded_instances = upload_instances;
 
     RenderInstance fallback_instance = {};
@@ -457,7 +301,5 @@ void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cm
     }
     out_gpu_scene.scene_vertex_color_buffer->Unmap();
 
-    BuildMaterialResources(device, cmd_buffer, image_layouts, scene.materials, out_gpu_scene.fallback_texture, out_gpu_scene);
-    UploadVertices(device, scene.vertices, out_gpu_scene);
-    UploadIndices(device, scene.indices.empty() ? std::vector<uint32_t>{0u} : scene.indices, out_gpu_scene);
+    scene.geometry.SyncToGpu(device);
 }

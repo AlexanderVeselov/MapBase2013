@@ -1,9 +1,9 @@
 #pragma once
 
 #include "engine_adapter.h"
+#include "source_model_manager.h"
 #include "source_renderable_entity_adapter.h"
 #include "source_scene_cache.h"
-#include "source_static_prop_loader.h"
 #include "source_world_loader.h"
 
 #include <array>
@@ -23,6 +23,6 @@ public:
 private:
     SourceRenderableEntityAdapter renderable_entity_adapter_;
     SourceWorldLoader world_loader_;
-    SourceStaticPropLoader static_prop_loader_;
+    SourceModelManager model_manager_;
     SourceSceneBuildCache build_cache_;
 };
