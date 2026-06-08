@@ -803,8 +803,8 @@ struct BspGeometryBuilder
     }
 };
 
-void LoadBsp(char const* filename, GeometryManager<Vertex, uint32_t>& out_geometry, std::vector<RenderMaterial>& out_materials,
-    LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
+void LoadBsp(char const* filename, MirroredBuffer<Vertex>& out_vertices, MirroredBuffer<uint32_t>& out_indices,
+    std::vector<RenderMaterial>& out_materials, LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
     std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
@@ -851,7 +851,8 @@ void LoadBsp(char const* filename, GeometryManager<Vertex, uint32_t>& out_geomet
         geometry_builder.BuildBrushModelGeometry(submodel_index, out_brush_model_ranges);
     }
 
-    out_geometry.Append(vertices, indices);
+    out_vertices.Append(vertices);
+    out_indices.Append(indices);
 }
 
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props)

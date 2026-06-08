@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mathlib/mathlib.h"
-#include "geometry_manager.h"
+#include "mirrored_buffer.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -60,8 +60,8 @@ struct BrushModelSourceRange
     uint32_t material_index = 0;
 };
 
-void LoadBsp(char const* filename, GeometryManager<Vertex, uint32_t>& out_geometry, std::vector<RenderMaterial>& out_materials,
-    LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
+void LoadBsp(char const* filename, MirroredBuffer<Vertex>& out_vertices, MirroredBuffer<uint32_t>& out_indices,
+    std::vector<RenderMaterial>& out_materials, LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
     std::vector<BrushModelSourceRange>& out_brush_model_ranges);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);
 

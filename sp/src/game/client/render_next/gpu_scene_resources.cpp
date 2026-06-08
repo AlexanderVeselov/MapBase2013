@@ -30,7 +30,7 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
 }
 }
 
-void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+void RenderScene::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts)
 {
     if (!fallback_lightmap_texture)
@@ -42,58 +42,23 @@ void RenderSceneGpu::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::C
     }
 }
 
-void RenderSceneGpu::EnsureFallbackSceneBuffers(gpu::DevicePtr const& device)
-{
-    if (!scene_transform_buffer)
-    {
-        SceneTransform identity_transform = MakeIdentitySceneTransform();
-        scene_transform_buffer = device->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
-            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-        void* transform_data = scene_transform_buffer->Map();
-        std::memcpy(transform_data, &identity_transform, sizeof(SceneTransform));
-        scene_transform_buffer->Unmap();
-    }
-
-    if (!scene_instance_buffer)
-    {
-        RenderInstance fallback_instance = {};
-        scene_instance_buffer = device->CreateBuffer(sizeof(RenderInstance), sizeof(RenderInstance),
-            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-        void* instance_data = scene_instance_buffer->Map();
-        std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
-        scene_instance_buffer->Unmap();
-    }
-
-    if (!scene_vertex_color_buffer)
-    {
-        VertexColorData fallback_vertex_color = {};
-        scene_vertex_color_buffer = device->CreateBuffer(sizeof(VertexColorData), sizeof(VertexColorData),
-            gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-        void* vertex_color_data = scene_vertex_color_buffer->Map();
-        std::memcpy(vertex_color_data, &fallback_vertex_color, sizeof(VertexColorData));
-        scene_vertex_color_buffer->Unmap();
-    }
-
-}
-
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
-    SourceTextureManager& texture_manager, RenderSceneGpu& out_gpu_scene)
+    SourceTextureManager& texture_manager, RenderScene& out_scene)
 {
-    out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
-    out_gpu_scene.EnsureFallbackSceneBuffers(device);
+    out_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
 
-    out_gpu_scene.skybox_texture_ids.fill(0);
+    out_scene.skybox_texture_ids.fill(0);
     for (size_t face_index = 0; face_index < skybox_texture_names.size(); ++face_index)
     {
-        out_gpu_scene.skybox_texture_ids[face_index] =
+        out_scene.skybox_texture_ids[face_index] =
             texture_manager.LoadTexture(device, cmd_buffer, image_layouts, skybox_texture_names[face_index].c_str());
     }
 
 }
 
 std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu const& scene,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene const& scene,
     SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
     std::vector<uint32_t> material_ids(scene.materials.size() + 1, 0);
@@ -106,110 +71,46 @@ std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::Comman
     return material_ids;
 }
 
-std::vector<RenderInstance> BuildUploadedInstances(RenderSceneCpu const& scene, std::vector<uint32_t> const& material_ids,
+std::vector<Material> BuildUploadedMaterials(std::vector<uint32_t> const& material_ids,
     SourceMaterialManager const& material_manager)
 {
-    std::vector<RenderInstance> upload_instances = scene.instances;
-    for (RenderInstance& instance : upload_instances)
+    std::vector<Material> upload_materials(material_ids.size());
+    for (size_t material_index = 0; material_index < material_ids.size(); ++material_index)
     {
-        if (instance.material_index >= material_ids.size())
-        {
-            instance.material_index = 0;
-        }
-        else
-        {
-            instance.material_index =
-                material_manager.GetMaterial(material_ids[instance.material_index]).albedo_texture_id;
-        }
-
-        if (instance.transform_index >= scene.transforms.size())
-        {
-            instance.transform_index = 0;
-        }
-        if (instance.index_offset + instance.index_count > scene.geometry.IndexCount())
-        {
-            instance.index_offset = 0;
-            instance.index_count = 0;
-        }
-        if (instance.vertex_color_offset != RenderInstance::kInvalidVertexColorOffset
-            && instance.index_count > 0)
-        {
-            uint32_t required_vertex_color_count = instance.padding0;
-            if (instance.vertex_color_offset + required_vertex_color_count > scene.vertex_colors.size())
-            {
-                instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
-            }
-        }
+        upload_materials[material_index] = material_manager.GetMaterial(material_ids[material_index]);
     }
 
-    return upload_instances;
+    return upload_materials;
 }
 
-void UploadRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderSceneCpu& scene,
-    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager, RenderSceneGpu& out_gpu_scene)
+void SyncRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene& scene,
+    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
-    out_gpu_scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
-    out_gpu_scene.EnsureFallbackSceneBuffers(device);
+    scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
 
     if (!scene.lightmap_atlas.pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
     {
         gpu::ImageFormat lightmap_format = scene.lightmap_atlas.format == LightmapAtlas::Format::kRGBA32Float
             ? gpu::ImageFormat::kRGBA32_Float
             : gpu::ImageFormat::kRGBA8_UNorm;
-        out_gpu_scene.lightmap_texture = CreateTextureImage(device, cmd_buffer, image_layouts,
+        scene.lightmap_texture = CreateTextureImage(device, cmd_buffer, image_layouts,
             static_cast<uint32_t>(scene.lightmap_atlas.width), static_cast<uint32_t>(scene.lightmap_atlas.height),
             lightmap_format, scene.lightmap_atlas.pixels.data(), scene.lightmap_atlas.pixels.size());
     }
     else
     {
-        out_gpu_scene.lightmap_texture = out_gpu_scene.fallback_lightmap_texture;
+        scene.lightmap_texture = scene.fallback_lightmap_texture;
     }
 
-    out_gpu_scene.scene_transform_buffer = device->CreateBuffer(sizeof(SceneTransform) * scene.transforms.size(), sizeof(SceneTransform),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-    void* transform_data = out_gpu_scene.scene_transform_buffer->Map();
-    std::memcpy(transform_data, scene.transforms.data(), sizeof(SceneTransform) * scene.transforms.size());
-    out_gpu_scene.scene_transform_buffer->Unmap();
+    scene.material_ids = BuildMaterialIds(device, cmd_buffer, image_layouts, scene, texture_manager, material_manager);
+    scene.gpu_materials.Clear();
+    scene.gpu_materials.Append(BuildUploadedMaterials(scene.material_ids, material_manager));
 
-    out_gpu_scene.material_ids =
-        BuildMaterialIds(device, cmd_buffer, image_layouts, scene, texture_manager, material_manager);
-    std::vector<RenderInstance> upload_instances =
-        BuildUploadedInstances(scene, out_gpu_scene.material_ids, material_manager);
-    out_gpu_scene.instance_count = static_cast<uint32_t>(upload_instances.size());
-    out_gpu_scene.uploaded_instances = upload_instances;
-
-    RenderInstance fallback_instance = {};
-    size_t upload_instance_count = upload_instances.empty() ? 1 : upload_instances.size();
-    out_gpu_scene.scene_instance_buffer = device->CreateBuffer(sizeof(RenderInstance) * upload_instance_count, sizeof(RenderInstance),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-    void* instance_data = out_gpu_scene.scene_instance_buffer->Map();
-    if (upload_instances.empty())
-    {
-        out_gpu_scene.uploaded_instances.clear();
-        out_gpu_scene.instance_count = 0;
-        std::memcpy(instance_data, &fallback_instance, sizeof(RenderInstance));
-    }
-    else
-    {
-        std::memcpy(instance_data, upload_instances.data(), sizeof(RenderInstance) * upload_instances.size());
-    }
-    out_gpu_scene.scene_instance_buffer->Unmap();
-
-    size_t upload_vertex_color_count = scene.vertex_colors.empty() ? 1 : scene.vertex_colors.size();
-    out_gpu_scene.scene_vertex_color_buffer = device->CreateBuffer(sizeof(VertexColorData) * upload_vertex_color_count, sizeof(VertexColorData),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-    void* vertex_color_data = out_gpu_scene.scene_vertex_color_buffer->Map();
-    if (scene.vertex_colors.empty())
-    {
-        VertexColorData fallback_vertex_color = {};
-        std::memcpy(vertex_color_data, &fallback_vertex_color, sizeof(VertexColorData));
-    }
-    else
-    {
-        std::memcpy(vertex_color_data, scene.vertex_colors.data(), sizeof(VertexColorData) * scene.vertex_colors.size());
-    }
-    out_gpu_scene.scene_vertex_color_buffer->Unmap();
-
-    scene.geometry.SyncToGpu(device);
+    scene.transforms.Sync(device, cmd_buffer);
+    scene.instances.Sync(device, cmd_buffer);
+    scene.vertex_colors.Sync(device, cmd_buffer);
+    scene.gpu_materials.Sync(device, cmd_buffer);
+    scene.vertices.Sync(device, cmd_buffer);
+    scene.indices.Sync(device, cmd_buffer);
 }

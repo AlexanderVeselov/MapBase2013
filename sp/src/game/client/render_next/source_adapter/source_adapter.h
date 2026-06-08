@@ -17,8 +17,8 @@ public:
     char const* GetSkyName() const override;
     void GetSkyboxTextureNames(std::array<std::string, 6>& out_texture_names) const override;
 
-    void BuildWorldScene(char const* level_name, RenderSceneCpu& out_scene) override;
-    void UpdateRenderableEntities(RenderSceneCpu& scene) override;
+    void BuildWorldScene(char const* level_name, RenderScene& out_scene) override;
+    void UpdateRenderableEntities(RenderScene& scene) override;
 
 private:
     SourceRenderableEntityAdapter renderable_entity_adapter_;

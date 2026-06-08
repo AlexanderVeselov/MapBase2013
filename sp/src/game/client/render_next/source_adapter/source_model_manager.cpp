@@ -63,21 +63,20 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fa
 }
 
 uint32_t AppendStaticPropVertexColors(std::vector<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count,
-    matrix3x4_t const& model_to_world, std::vector<VertexColorData>& out_vertex_colors)
+    matrix3x4_t const& model_to_world, MirroredBuffer<VertexColorData>& out_vertex_colors)
 {
-    uint32_t vertex_color_offset = static_cast<uint32_t>(out_vertex_colors.size());
-    out_vertex_colors.reserve(out_vertex_colors.size() + vertex_count);
+    uint32_t vertex_color_offset = out_vertex_colors.Size();
     for (uint32_t vertex_offset = 0; vertex_offset < vertex_count; ++vertex_offset)
     {
         VertexColorData vertex_color = {};
         ComputeStaticPropVertexColor(vertices[first_vertex + vertex_offset], model_to_world, vertex_color.color);
-        out_vertex_colors.push_back(vertex_color);
+        out_vertex_colors.Append(vertex_color);
     }
 
     return vertex_color_offset;
 }
 
-void ApplyFallbackLightmapUvs(std::vector<Vertex>& io_vertices, RenderSceneCpu const& scene)
+void ApplyFallbackLightmapUvs(std::vector<Vertex>& io_vertices, RenderScene const& scene)
 {
     float fallback_lightmap_u = 0.5f / static_cast<float>((std::max)(scene.lightmap_atlas.width, 1));
     float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(scene.lightmap_atlas.height, 1));
@@ -94,7 +93,7 @@ std::string BuildModelCacheKey(char const* model_name, int skin)
     return std::string(model_name ? model_name : "") + "#" + std::to_string(skin);
 }
 
-void InitializeSceneMaterialIndices(RenderSceneCpu const& scene, SourceModelSceneCache& io_scene_cache)
+void InitializeSceneMaterialIndices(RenderScene const& scene, SourceModelSceneCache& io_scene_cache)
 {
     if (io_scene_cache.is_initialized)
     {
@@ -111,19 +110,18 @@ void InitializeSceneMaterialIndices(RenderSceneCpu const& scene, SourceModelScen
 }
 
 bool AppendInstanceRanges(std::vector<SourceModelInstanceRange> const& mesh_ranges, matrix3x4_t const& model_to_world,
-    RenderSceneCpu& io_scene)
+    RenderScene& io_scene)
 {
     if (mesh_ranges.empty())
     {
         return false;
     }
 
-    uint32_t transform_index = static_cast<uint32_t>(io_scene.transforms.size());
-    io_scene.transforms.push_back(MakeSceneTransform(model_to_world));
+    uint32_t transform_index = io_scene.transforms.Append(MakeSceneTransform(model_to_world)).offset;
 
     for (SourceModelInstanceRange const& mesh_range : mesh_ranges)
     {
-        uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.geometry.VertexData(), mesh_range.vertex_offset, mesh_range.vertex_count,
+        uint32_t vertex_color_offset = AppendStaticPropVertexColors(mesh_range.vertices, 0, mesh_range.vertex_count,
             model_to_world, io_scene.vertex_colors);
         AddRenderInstance(io_scene.instances, mesh_range.vertex_offset, mesh_range.index_offset, mesh_range.index_count,
             mesh_range.material_index, transform_index, nullptr, vertex_color_offset, mesh_range.vertex_count);
@@ -133,7 +131,7 @@ bool AppendInstanceRanges(std::vector<SourceModelInstanceRange> const& mesh_rang
 }
 }
 
-bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int skin, RenderSceneCpu& io_scene, SourceModelSceneCache& io_scene_cache,
+bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene, SourceModelSceneCache& io_scene_cache,
     SourceModelInstanceData& out_instance_data)
 {
     if (!model_name || model_name[0] == '\0' || !mdlcache || !g_pStudioRender)
@@ -235,13 +233,15 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
         if (!mesh_vertices.empty() && !mesh_indices.empty() && triangles_before_batch > 0)
         {
             ApplyFallbackLightmapUvs(mesh_vertices, io_scene);
-            GeometrySlice geometry_slice = io_scene.geometry.Append(mesh_vertices, mesh_indices);
+            MirroredBuffer<Vertex>::Slice vertex_slice = io_scene.vertices.Append(mesh_vertices);
+            MirroredBuffer<uint32_t>::Slice index_slice = io_scene.indices.Append(mesh_indices);
             out_instance_data.mesh_ranges.push_back({
-                geometry_slice.vertex_offset,
-                geometry_slice.vertex_count,
-                geometry_slice.index_offset,
-                geometry_slice.index_count,
-                material_index});
+                vertex_slice.offset,
+                vertex_slice.count,
+                index_slice.offset,
+                index_slice.count,
+                material_index,
+                mesh_vertices});
         }
     }
 
@@ -249,7 +249,7 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
     return !out_instance_data.mesh_ranges.empty();
 }
 
-bool SourceModelManager::AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderSceneCpu& io_scene,
+bool SourceModelManager::AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
     SourceModelSceneCache* io_scene_cache)
 {
     SourceModelInstanceData const* existing_instance_data = nullptr;
@@ -287,7 +287,7 @@ bool SourceModelManager::AppendModelByName(char const* model_name, int skin, mat
     return AppendInstanceRanges(instance_data.mesh_ranges, model_to_world, io_scene);
 }
 
-void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderSceneCpu& io_scene)
+void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene)
 {
     if (!modelinfo || !mdlcache || !g_pStudioRender)
     {
@@ -308,14 +308,14 @@ void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement>
         matrix3x4_t model_to_world;
         AngleMatrix(placement.angles, placement.origin, model_to_world);
 
-        size_t instance_count_before = io_scene.instances.size();
+        size_t instance_count_before = io_scene.instances.Size();
         if (!AppendModelByName(placement.model_name.c_str(), placement.skin, model_to_world, io_scene, &scene_cache))
         {
             continue;
         }
 
         ++appended_prop_count;
-        for (size_t instance_index = instance_count_before; instance_index < io_scene.instances.size(); ++instance_index)
+        for (size_t instance_index = instance_count_before; instance_index < io_scene.instances.Size(); ++instance_index)
         {
             appended_triangle_count += static_cast<int>(io_scene.instances[instance_index].index_count / 3);
         }

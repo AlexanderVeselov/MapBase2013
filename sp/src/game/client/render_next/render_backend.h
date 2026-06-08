@@ -36,7 +36,7 @@ struct RenderBackendResources
 };
 
 void InitializeRenderBackend(char const* source_file_path, RenderBackendContext& context,
-    RenderBackendResources& resources, RenderSceneGpu& gpu_scene);
+    RenderBackendResources& resources);
 void EnsureRenderCommandBuffer(RenderBackendContext& context);
 void TransitionRenderImage(RenderBackendContext& context, gpu::ImagePtr const& image, gpu::ImageLayout desired_layout);
 void SubmitRenderCommandsAndWait(RenderBackendContext& context);

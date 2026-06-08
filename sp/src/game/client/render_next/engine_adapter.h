@@ -3,7 +3,7 @@
 #include <array>
 #include <string>
 
-struct RenderSceneCpu;
+struct RenderScene;
 
 class EngineAdapter
 {
@@ -14,6 +14,6 @@ public:
     virtual char const* GetSkyName() const = 0;
     virtual void GetSkyboxTextureNames(std::array<std::string, 6>& out_texture_names) const = 0;
 
-    virtual void BuildWorldScene(char const* level_name, RenderSceneCpu& out_scene) = 0;
-    virtual void UpdateRenderableEntities(RenderSceneCpu& scene) = 0;
+    virtual void BuildWorldScene(char const* level_name, RenderScene& out_scene) = 0;
+    virtual void UpdateRenderableEntities(RenderScene& scene) = 0;
 };

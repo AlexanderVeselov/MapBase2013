@@ -12,9 +12,9 @@
 class SkyRenderTask final : public RenderTask
 {
 public:
-    void Initialize(gpu::DevicePtr const& device, RenderBackendResources const& backend_resources, RenderSceneGpu const& gpu_scene,
+    void Initialize(gpu::DevicePtr const& device, RenderBackendResources const& backend_resources, RenderScene const& scene,
         SourceTextureManager const& texture_manager);
-    void UpdateBindings(RenderBackendResources const& backend_resources, RenderSceneGpu const& gpu_scene, SourceTextureManager const& texture_manager);
+    void UpdateBindings(RenderBackendResources const& backend_resources, RenderScene const& scene, SourceTextureManager const& texture_manager);
     char const* GetName() const override;
     void Execute(RenderTaskContext& context) override;
 

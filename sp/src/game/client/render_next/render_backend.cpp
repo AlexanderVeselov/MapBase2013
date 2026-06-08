@@ -19,7 +19,7 @@ std::string GetShaderDirectory(char const* source_file_path)
 }
 
 void InitializeRenderBackend(char const* source_file_path, RenderBackendContext& context,
-    RenderBackendResources& resources, RenderSceneGpu& gpu_scene)
+    RenderBackendResources& resources)
 {
     DX9_InitD3D9Interop();
     context.api.reset(gpu::Api::Create(gpu::ApiType::kD3D12));
@@ -38,14 +38,6 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
         gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
     resources.inverse_view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
         gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
-
-    SceneTransform identity_transform = MakeIdentitySceneTransform();
-    gpu_scene.scene_transform_buffer = context.device->CreateBuffer(sizeof(SceneTransform), sizeof(SceneTransform),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource);
-    void* transform_data = gpu_scene.scene_transform_buffer->Map();
-    std::memcpy(transform_data, &identity_transform, sizeof(identity_transform));
-    gpu_scene.scene_transform_buffer->Unmap();
-
 }
 
 void EnsureRenderCommandBuffer(RenderBackendContext& context)

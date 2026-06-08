@@ -7,5 +7,5 @@
 class SourceRenderableEntityAdapter
 {
 public:
-    void UpdateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache);
+    void UpdateRenderableEntities(RenderScene& scene, SourceSceneBuildCache const& build_cache);
 };

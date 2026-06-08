@@ -5,5 +5,5 @@
 class SourceWorldLoader
 {
 public:
-    void BuildBaseScene(char const* level_name, RenderSceneCpu& out_scene, SourceSceneBuildCache& out_cache) const;
+    void BuildBaseScene(char const* level_name, RenderScene& out_scene, SourceSceneBuildCache& out_cache) const;
 };

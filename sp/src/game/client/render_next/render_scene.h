@@ -1,9 +1,9 @@
 #pragma once
 
 #include "bsp_loader.h"
-#include "geometry_manager.h"
+#include "mirrored_buffer.h"
+#include "source_adapter/source_material_manager.h"
 
-#include "gpu_buffer.hpp"
 #include "gpu_command_buffer.hpp"
 #include "gpu_image.hpp"
 
@@ -78,30 +78,37 @@ struct VertexColorData
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
-struct RenderSceneCpu
+struct RenderScene
 {
-    std::vector<SceneTransform> transforms;
-    GeometryManager<Vertex, uint32_t> geometry;
-    std::vector<VertexColorData> vertex_colors;
+    MirroredBuffer<Vertex> vertices{gpu::BufferFlags::kCpuAccess};
+    MirroredBuffer<uint32_t> indices{gpu::BufferFlags::kCpuAccess};
+    MirroredBuffer<SceneTransform> transforms;
+    MirroredBuffer<VertexColorData> vertex_colors;
+    MirroredBuffer<RenderInstance> instances;
+    MirroredBuffer<Material> gpu_materials;
     std::vector<RenderMaterial> materials;
-    std::vector<RenderInstance> instances;
+    std::vector<uint32_t> material_ids;
     LightmapAtlas lightmap_atlas;
-};
-
-struct RenderSceneGpu
-{
-    gpu::BufferPtr scene_transform_buffer;
-    gpu::BufferPtr scene_instance_buffer;
-    gpu::BufferPtr scene_vertex_color_buffer;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
-    std::vector<uint32_t> material_ids;
-    std::vector<RenderInstance> uploaded_instances;
     std::array<uint32_t, 6> skybox_texture_ids = {};
-    uint32_t instance_count = 0;
+
+    void Reset()
+    {
+        vertices.Clear();
+        indices.Clear();
+        transforms.Clear();
+        vertex_colors.Clear();
+        instances.Clear();
+        gpu_materials.Clear();
+        materials.clear();
+        material_ids.clear();
+        lightmap_atlas = {};
+        lightmap_texture.reset();
+        skybox_texture_ids.fill(0);
+    }
 
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts);
-    void EnsureFallbackSceneBuffers(gpu::DevicePtr const& device);
 };
 

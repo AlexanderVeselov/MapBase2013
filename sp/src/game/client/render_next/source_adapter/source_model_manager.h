@@ -22,6 +22,7 @@ struct SourceModelInstanceRange
     uint32_t index_offset = 0;
     uint32_t index_count = 0;
     uint32_t material_index = 0;
+    std::vector<Vertex> vertices;
 };
 
 struct SourceModelInstanceData
@@ -46,11 +47,11 @@ struct SourceModelSceneCache
 class SourceModelManager
 {
 public:
-    bool AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderSceneCpu& io_scene,
+    bool AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
         SourceModelSceneCache* io_scene_cache = nullptr);
-    void AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderSceneCpu& io_scene);
+    void AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene);
 
 private:
-    bool AppendLoadedModelGeometry(char const* model_name, int skin, RenderSceneCpu& io_scene, SourceModelSceneCache& io_scene_cache,
+    bool AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene, SourceModelSceneCache& io_scene_cache,
         SourceModelInstanceData& out_instance_data);
 };

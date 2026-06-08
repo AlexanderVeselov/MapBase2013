@@ -7,10 +7,10 @@ constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
 void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& view_proj_buffer,
-    RenderSceneGpu const& gpu_scene)
+    RenderScene const& scene)
 {
     (void)view_proj_buffer;
-    (void)gpu_scene;
+    (void)scene;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
     pipeline_desc.vs_filename = "render_scene.vs";
@@ -37,7 +37,7 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     descriptor_set_ = pipeline_->CreateDescriptorSet();
 }
 
-void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderSceneGpu const& gpu_scene,
+void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderScene const& scene,
     SourceTextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
@@ -45,13 +45,14 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, 
 
     descriptor_set_->Clear();
     descriptor_set_->BindBuffer(*view_proj_buffer, 0);
-    descriptor_set_->BindBuffer(*gpu_scene.scene_transform_buffer, 1);
-    descriptor_set_->BindBuffer(*gpu_scene.scene_instance_buffer, 2);
-    descriptor_set_->BindBuffer(*gpu_scene.scene_vertex_color_buffer, 3);
+    descriptor_set_->BindBuffer(*scene.transforms.GpuBuffer(), 1);
+    descriptor_set_->BindBuffer(*scene.instances.GpuBuffer(), 2);
+    descriptor_set_->BindBuffer(*scene.vertex_colors.GpuBuffer(), 3);
+    descriptor_set_->BindBuffer(*scene.gpu_materials.GpuBuffer(), 4);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
-    descriptor_set_->BindImage(*(gpu_scene.lightmap_texture ? gpu_scene.lightmap_texture : gpu_scene.fallback_lightmap_texture), 0, 3);
+    descriptor_set_->BindImage(*(scene.lightmap_texture ? scene.lightmap_texture : scene.fallback_lightmap_texture), 0, 3);
 }
 
 char const* DrawSceneTask::GetName() const
@@ -65,9 +66,9 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
     context.backend.cmd_buffer->SetRenderTarget(context.backend_resources.color_texture, context.backend_resources.depth_texture);
     context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
-    gpu::BufferPtr const& vertex_buffer = context.scene.geometry.VertexBuffer();
-    gpu::BufferPtr const& index_buffer = context.scene.geometry.IndexBuffer();
-    if (!vertex_buffer || !index_buffer || context.gpu_scene.instance_count == 0)
+    gpu::BufferPtr const& vertex_buffer = context.scene.vertices.GpuBuffer();
+    gpu::BufferPtr const& index_buffer = context.scene.indices.GpuBuffer();
+    if (!vertex_buffer || !index_buffer || context.scene.instances.Size() == 0)
     {
         return;
     }
@@ -76,9 +77,9 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
     context.backend.cmd_buffer->SetVertexBuffer(vertex_buffer, sizeof(Vertex));
     context.backend.cmd_buffer->SetIndexBuffer(index_buffer);
-    for (uint32_t instance_index = 0; instance_index < context.gpu_scene.uploaded_instances.size(); ++instance_index)
+    for (uint32_t instance_index = 0; instance_index < context.scene.instances.Size(); ++instance_index)
     {
-        RenderInstance const& instance = context.gpu_scene.uploaded_instances[instance_index];
+        RenderInstance const& instance = context.scene.instances[instance_index];
         if (instance.index_count == 0 || instance.is_visible == RenderInstance::kHidden)
         {
             continue;

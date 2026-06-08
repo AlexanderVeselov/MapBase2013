@@ -31,10 +31,12 @@ bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
 }
 }
 
-void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& scene, SourceSceneBuildCache const& build_cache)
+void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene, SourceSceneBuildCache const& build_cache)
 {
-    scene.transforms = build_cache.base_transforms;
-    scene.instances = build_cache.base_instances;
+    scene.transforms.Clear();
+    scene.transforms.Append(build_cache.base_transforms);
+    scene.instances.Clear();
+    scene.instances.Append(build_cache.base_instances);
 
     if (build_cache.brush_model_ranges.empty() || !cl_entitylist || !modelinfo)
     {
@@ -76,7 +78,6 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
 
         modtype_t model_type = static_cast<modtype_t>(modelinfo->GetModelType(model));
         uint32_t transform_index = 0;
-        uint32_t first_instance = 0;
         uint32_t instance_count = 0;
         int submodel_index = 0;
 
@@ -110,16 +111,30 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
                 continue;
             }
 
-            matrix3x4_t model_to_world;
-            AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
-            transform_index = static_cast<uint32_t>(scene.transforms.size());
-            scene.transforms.push_back(MakeSceneTransform(model_to_world));
-
-            first_instance = static_cast<uint32_t>(scene.instances.size());
+            bool has_valid_range = false;
             for (BrushModelSourceRange const* brush_range : submodel_it->second)
             {
-                if (!brush_range || brush_range->first_vertex > scene.geometry.VertexCount()
-                    || brush_range->first_index + brush_range->index_count > scene.geometry.IndexCount())
+                if (brush_range && brush_range->first_vertex <= scene.vertices.Size()
+                    && brush_range->first_index + brush_range->index_count <= scene.indices.Size())
+                {
+                    has_valid_range = true;
+                    break;
+                }
+            }
+
+            if (!has_valid_range)
+            {
+                continue;
+            }
+
+            matrix3x4_t model_to_world;
+            AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
+            transform_index = scene.transforms.Append(MakeSceneTransform(model_to_world)).offset;
+
+            for (BrushModelSourceRange const* brush_range : submodel_it->second)
+            {
+                if (!brush_range || brush_range->first_vertex > scene.vertices.Size()
+                    || brush_range->first_index + brush_range->index_count > scene.indices.Size())
                 {
                     continue;
                 }
@@ -131,7 +146,6 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderSceneCpu& sce
 
             if (instance_count == 0)
             {
-                scene.transforms.pop_back();
                 continue;
             }
         }

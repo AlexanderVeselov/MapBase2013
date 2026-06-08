@@ -4,14 +4,14 @@
 #include "../bsp_loader.h"
 #include "source_scene_utils.h"
 
-void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderSceneCpu& out_scene, SourceSceneBuildCache& out_cache) const
+void SourceWorldLoader::BuildBaseScene(char const* level_name, RenderScene& out_scene, SourceSceneBuildCache& out_cache) const
 {
-    out_scene = {};
+    out_scene.Reset();
     out_cache = {};
-    out_scene.transforms.push_back(MakeIdentitySceneTransform());
+    out_scene.transforms.Append(MakeIdentitySceneTransform());
 
     std::vector<MeshSourceRange> world_mesh_ranges;
-    LoadBsp(level_name, out_scene.geometry, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges,
+    LoadBsp(level_name, out_scene.vertices, out_scene.indices, out_scene.materials, out_scene.lightmap_atlas, world_mesh_ranges,
         out_cache.brush_model_ranges);
 
     for (MeshSourceRange const& mesh_range : world_mesh_ranges)

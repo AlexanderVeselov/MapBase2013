@@ -127,7 +127,7 @@ void SourceAdapter::GetSkyboxTextureNames(std::array<std::string, 6>& out_textur
     }
 }
 
-void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_scene)
+void SourceAdapter::BuildWorldScene(char const* level_name, RenderScene& out_scene)
 {
     char const* resolved_level_name = (level_name && level_name[0]) ? level_name : GetLevelName();
     world_loader_.BuildBaseScene(resolved_level_name, out_scene, build_cache_);
@@ -146,11 +146,11 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderSceneCpu& out_
         model_manager_.AppendModelPlacements(model_placements, out_scene);
     }
 
-    build_cache_.base_transforms = out_scene.transforms;
-    build_cache_.base_instances = out_scene.instances;
+    build_cache_.base_transforms = out_scene.transforms.ToVector();
+    build_cache_.base_instances = out_scene.instances.ToVector();
 }
 
-void SourceAdapter::UpdateRenderableEntities(RenderSceneCpu& scene)
+void SourceAdapter::UpdateRenderableEntities(RenderScene& scene)
 {
     renderable_entity_adapter_.UpdateRenderableEntities(scene, build_cache_);
 }

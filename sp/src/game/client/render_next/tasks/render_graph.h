@@ -9,8 +9,7 @@ struct RenderTaskContext
 {
     RenderBackendContext& backend;
     RenderBackendResources& backend_resources;
-    RenderSceneCpu& scene;
-    RenderSceneGpu& gpu_scene;
+    RenderScene& scene;
     uint32_t viewport_width = 0;
     uint32_t viewport_height = 0;
 };

@@ -2,7 +2,7 @@
 
 #include "../render_scene.h"
 
-inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, uint32_t vertex_offset, uint32_t index_offset,
+inline uint32_t AddRenderInstance(MirroredBuffer<RenderInstance>& out_instances, uint32_t vertex_offset, uint32_t index_offset,
     uint32_t index_count, uint32_t material_index, uint32_t transform_index, float const* color = nullptr,
     uint32_t vertex_color_offset = RenderInstance::kInvalidVertexColorOffset, uint32_t vertex_count = 0)
 {
@@ -22,7 +22,5 @@ inline uint32_t AddRenderInstance(std::vector<RenderInstance>& out_instances, ui
         instance.color[2] = color[2];
     }
 
-    uint32_t instance_id = static_cast<uint32_t>(out_instances.size());
-    out_instances.push_back(instance);
-    return instance_id;
+    return out_instances.Append(instance).offset;
 }

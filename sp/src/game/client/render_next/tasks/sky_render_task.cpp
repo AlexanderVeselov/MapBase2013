@@ -7,7 +7,7 @@ constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
 void SkyRenderTask::Initialize(gpu::DevicePtr const& device, RenderBackendResources const& backend_resources,
-    RenderSceneGpu const& gpu_scene, SourceTextureManager const& texture_manager)
+    RenderScene const& scene, SourceTextureManager const& texture_manager)
 {
     pipeline_ = device->CreateComputePipeline("render_sky.cs");
 
@@ -19,10 +19,10 @@ void SkyRenderTask::Initialize(gpu::DevicePtr const& device, RenderBackendResour
     sky_sampler_ = device->GetSampler(sampler_desc);
 
     descriptor_set_ = pipeline_->CreateDescriptorSet();
-    UpdateBindings(backend_resources, gpu_scene, texture_manager);
+    UpdateBindings(backend_resources, scene, texture_manager);
 }
 
-void SkyRenderTask::UpdateBindings(RenderBackendResources const& backend_resources, RenderSceneGpu const& gpu_scene,
+void SkyRenderTask::UpdateBindings(RenderBackendResources const& backend_resources, RenderScene const& scene,
     SourceTextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
@@ -45,8 +45,8 @@ void SkyRenderTask::Execute(RenderTaskContext& context)
     TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kShaderReadWrite);
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
-    context.backend.cmd_buffer->SetRootConstants(context.gpu_scene.skybox_texture_ids.data(),
-        sizeof(uint32_t) * context.gpu_scene.skybox_texture_ids.size());
+    context.backend.cmd_buffer->SetRootConstants(context.scene.skybox_texture_ids.data(),
+        sizeof(uint32_t) * context.scene.skybox_texture_ids.size());
     context.backend.cmd_buffer->Dispatch((context.viewport_width + 15) / 16, (context.viewport_height + 15) / 16, 1);
     context.backend.cmd_buffer->StorageBarrier(context.backend_resources.color_texture);
 }
