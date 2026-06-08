@@ -5,6 +5,7 @@
 #include "datacache/imdlcache.h"
 #include "engine/ivmodelinfo.h"
 #include "istudiorender.h"
+#include "optimize.h"
 #include "source_scene_utils.h"
 
 #include <algorithm>
@@ -61,6 +62,19 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fa
 {
     Vertex vertex = {source_vertex.m_Position, source_vertex.m_Normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
         {fallback_lightmap_u, fallback_lightmap_v}};
+    return vertex;
+}
+
+Vertex MakeStudioMeshVertex(Vector const& position, Vector const& normal, Vector2D const& texcoord,
+    float fallback_lightmap_u, float fallback_lightmap_v)
+{
+    Vertex vertex = {};
+    VectorCopy(position, vertex.pos);
+    VectorCopy(normal, vertex.normal);
+    vertex.uv[0] = texcoord.x;
+    vertex.uv[1] = texcoord.y;
+    vertex.lightmap_uv[0] = fallback_lightmap_u;
+    vertex.lightmap_uv[1] = fallback_lightmap_v;
     return vertex;
 }
 
@@ -147,6 +161,76 @@ bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, m
 
     return true;
 }
+
+uint32_t ResolveMaterialIndex(studiohdr_t const& studio_hdr, studioloddata_t const& lod_data,
+    mstudiomesh_t const& mesh, int skin, RenderScene& scene, gpu::DevicePtr const& device,
+    gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
+    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager,
+    std::unordered_map<std::string, uint32_t>& material_indices)
+{
+    int material_slot = mesh.material;
+    int num_skin_refs = studio_hdr.numskinref;
+    int num_skin_families = studio_hdr.numskinfamilies;
+    if (num_skin_refs > 0 && num_skin_families > 0)
+    {
+        int clamped_skin = (std::max)(0, (std::min)(skin, num_skin_families - 1));
+        material_slot = *studio_hdr.pSkinref(clamped_skin * num_skin_refs + mesh.material);
+    }
+
+    IMaterial* material = nullptr;
+    if (material_slot >= 0 && material_slot < lod_data.numMaterials)
+    {
+        material = lod_data.ppMaterials[material_slot];
+    }
+
+    return FindOrAddMaterial(material_indices, material ? material->GetName() : "", scene, device, cmd_buffer,
+        image_layouts, texture_manager, material_manager);
+}
+
+void AppendTriangleIndices(std::vector<uint32_t>& io_indices, uint32_t a, uint32_t b, uint32_t c)
+{
+    if (a == b || b == c || a == c)
+    {
+        return;
+    }
+
+    io_indices.push_back(a);
+    io_indices.push_back(b);
+    io_indices.push_back(c);
+}
+
+void AppendStripAsTriangleList(std::vector<uint32_t>& io_indices, std::vector<uint32_t> const& strip_vertices,
+    bool is_triangle_strip)
+{
+    if (strip_vertices.size() < 3)
+    {
+        return;
+    }
+
+    if (!is_triangle_strip)
+    {
+        for (size_t index = 0; index + 2 < strip_vertices.size(); index += 3)
+        {
+            AppendTriangleIndices(io_indices, strip_vertices[index + 0], strip_vertices[index + 1], strip_vertices[index + 2]);
+        }
+        return;
+    }
+
+    for (size_t index = 2; index < strip_vertices.size(); ++index)
+    {
+        uint32_t a = strip_vertices[index - 2];
+        uint32_t b = strip_vertices[index - 1];
+        uint32_t c = strip_vertices[index - 0];
+        if ((index & 1) == 0)
+        {
+            AppendTriangleIndices(io_indices, a, b, c);
+        }
+        else
+        {
+            AppendTriangleIndices(io_indices, b, a, c);
+        }
+    }
+}
 }
 
 void SourceModelManager::Reset()
@@ -185,93 +269,101 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
         return false;
     }
 
-    CStudioHdr studio_hdr_wrapper(studio_hdr, mdlcache);
-    float pose_parameters[MAXSTUDIOPOSEPARAM] = {};
-    Vector bone_positions[MAXSTUDIOBONES];
-    Quaternion bone_rotations[MAXSTUDIOBONES];
-    matrix3x4_t bone_to_world[MAXSTUDIOBONES];
-
-    IBoneSetup bone_setup(&studio_hdr_wrapper, BONE_USED_BY_ANYTHING, pose_parameters);
-    bone_setup.InitPose(bone_positions, bone_rotations);
-
-    QAngle identity_angles(0.0f, 0.0f, 0.0f);
-    Vector identity_origin(0.0f, 0.0f, 0.0f);
-    Studio_BuildMatrices(&studio_hdr_wrapper, identity_angles, identity_origin, bone_positions, bone_rotations, -1, 1.0f,
-        bone_to_world, BONE_USED_BY_ANYTHING);
-
-    DrawModelInfo_t draw_info = {};
-    draw_info.m_pStudioHdr = studio_hdr;
-    draw_info.m_pHardwareData = hardware_data;
-    draw_info.m_Skin = skin;
-    draw_info.m_Body = 0;
-    draw_info.m_HitboxSet = 0;
-    draw_info.m_pClientEntity = nullptr;
-    draw_info.m_Lod = hardware_data->m_RootLOD;
-    draw_info.m_bStaticLighting = true;
-
-    GetTriangles_Output_t triangle_output;
-    g_pStudioRender->GetTriangles(draw_info, bone_to_world, triangle_output);
-
-    out_cached_instances.clear();
-    out_cached_instances.reserve(triangle_output.m_MaterialBatches.Count());
-    for (int batch_index = 0; batch_index < triangle_output.m_MaterialBatches.Count(); ++batch_index)
+    vertexFileHeader_t* vertex_data = mdlcache->GetVertexData(mdl_handle);
+    if (!vertex_data || hardware_data->m_NumLODs <= 0 || !hardware_data->m_pLODs)
     {
-        GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
-        std::vector<Vertex> mesh_vertices;
-        std::vector<uint32_t> mesh_indices;
-        int triangles_before_batch = 0;
+        mdlcache->UnlockStudioHdr(mdl_handle);
+        return false;
+    }
 
-        auto append_vertex_by_index = [&](int vertex_index) -> uint32_t
+    int lod_index = (std::max)(0, (std::min)(hardware_data->m_RootLOD, hardware_data->m_NumLODs - 1));
+    studioloddata_t& lod_data = hardware_data->m_pLODs[lod_index];
+    int global_mesh_index = 0;
+    out_cached_instances.clear();
+    for (int body_part_index = 0; body_part_index < studio_hdr->numbodyparts; ++body_part_index)
+    {
+        mstudiobodyparts_t* body_part = studio_hdr->pBodypart(body_part_index);
+        for (int model_index = 0; model_index < body_part->nummodels; ++model_index)
         {
-            if (vertex_index < 0 || vertex_index >= material_batch.m_Verts.Count())
+            mstudiomodel_t* model = body_part->pModel(model_index);
+            for (int mesh_index = 0; mesh_index < model->nummeshes; ++mesh_index, ++global_mesh_index)
             {
-                return 0;
-            }
+                if (global_mesh_index >= hardware_data->m_NumStudioMeshes)
+                {
+                    break;
+                }
 
-            Vertex vertex = MakeStaticPropVertex(material_batch.m_Verts[vertex_index], 0.0f, 0.0f);
-            mesh_vertices.push_back(vertex);
-            return static_cast<uint32_t>(mesh_vertices.size() - 1);
-        };
+                mstudiomesh_t* mesh = model->pMesh(mesh_index);
+                model->vertexdata.pVertexData = vertex_data->GetVertexData();
+                model->vertexdata.pTangentData = vertex_data->GetTangentData();
+                mesh->vertexdata.modelvertexdata = &model->vertexdata;
+                mstudio_meshvertexdata_t const* mesh_vertex_data = &mesh->vertexdata;
+                if (!mesh_vertex_data->modelvertexdata || !mesh_vertex_data->modelvertexdata->pVertexData)
+                {
+                    continue;
+                }
 
-        if (material_batch.m_TriListIndices.Count() >= 3)
-        {
-            for (int index = 0; index + 2 < material_batch.m_TriListIndices.Count(); index += 3)
-            {
-                mesh_indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 0]));
-                mesh_indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 1]));
-                mesh_indices.push_back(append_vertex_by_index(material_batch.m_TriListIndices[index + 2]));
-                ++triangles_before_batch;
-            }
-        }
-        else
-        {
-            for (int vertex_index = 0; vertex_index + 2 < material_batch.m_Verts.Count(); vertex_index += 3)
-            {
-                mesh_indices.push_back(append_vertex_by_index(vertex_index + 0));
-                mesh_indices.push_back(append_vertex_by_index(vertex_index + 1));
-                mesh_indices.push_back(append_vertex_by_index(vertex_index + 2));
-                ++triangles_before_batch;
-            }
-        }
+                studiomeshdata_t& mesh_data = lod_data.m_pMeshData[global_mesh_index];
+                if (mesh_data.m_NumGroup <= 0 || !mesh_data.m_pMeshGroup)
+                {
+                    continue;
+                }
 
-        uint32_t material_index = FindOrAddMaterial(material_indices_,
-            material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "", io_scene, device, cmd_buffer,
-            image_layouts, texture_manager, material_manager);
-        if (!mesh_vertices.empty() && !mesh_indices.empty() && triangles_before_batch > 0)
-        {
-            ApplyFallbackLightmapUvs(mesh_vertices, io_scene);
-            MirroredBuffer<Vertex>::Slice vertex_slice = io_scene.vertices.Append(mesh_vertices);
-            MirroredBuffer<uint32_t>::Slice index_slice = io_scene.indices.Append(mesh_indices);
-            RenderInstance instance = {};
-            instance.vertex_offset = vertex_slice.offset;
-            instance.index_offset = index_slice.offset;
-            instance.index_count = index_slice.count;
-            instance.material_index = material_index;
-            instance.transform_index = 0;
-            instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
-            instance.is_visible = RenderInstance::kVisible;
-            instance.padding0 = vertex_slice.count;
-            out_cached_instances.push_back(instance);
+                float fallback_lightmap_u = 0.5f / static_cast<float>((std::max)(io_scene.lightmap_atlas.width, 1));
+                float fallback_lightmap_v = 0.5f / static_cast<float>((std::max)(io_scene.lightmap_atlas.height, 1));
+                std::vector<Vertex> mesh_vertices;
+                std::vector<uint32_t> mesh_indices;
+
+                for (int group_index = 0; group_index < mesh_data.m_NumGroup; ++group_index)
+                {
+                    studiomeshgroup_t const& mesh_group = mesh_data.m_pMeshGroup[group_index];
+                    for (int strip_index = 0; strip_index < mesh_group.m_NumStrips; ++strip_index)
+                    {
+                        OptimizedModel::StripHeader_t const& strip = mesh_group.m_pStripData[strip_index];
+                        std::vector<uint32_t> strip_vertices;
+                        strip_vertices.reserve(strip.numIndices);
+                        for (int index_in_strip = 0; index_in_strip < strip.numIndices; ++index_in_strip)
+                        {
+                            int group_index_offset = strip.indexOffset + index_in_strip;
+                            int mesh_vertex_index = mesh_group.MeshIndex(group_index_offset);
+                            if (mesh_vertex_index < 0 || mesh_vertex_index >= mesh->numvertices)
+                            {
+                                continue;
+                            }
+
+                            Vector const& position = *mesh_vertex_data->Position(mesh_vertex_index);
+                            Vector const& normal = *mesh_vertex_data->Normal(mesh_vertex_index);
+                            Vector2D const& texcoord = *mesh_vertex_data->Texcoord(mesh_vertex_index);
+                            mesh_vertices.push_back(MakeStudioMeshVertex(position, normal, texcoord,
+                                fallback_lightmap_u, fallback_lightmap_v));
+                            strip_vertices.push_back(static_cast<uint32_t>(mesh_vertices.size() - 1));
+                        }
+
+                        bool is_triangle_strip = (strip.flags & OptimizedModel::STRIP_IS_TRISTRIP) != 0;
+                        AppendStripAsTriangleList(mesh_indices, strip_vertices, is_triangle_strip);
+                    }
+                }
+
+                if (mesh_vertices.empty() || mesh_indices.empty())
+                {
+                    continue;
+                }
+
+                uint32_t material_index = ResolveMaterialIndex(*studio_hdr, lod_data, *mesh, skin, io_scene, device,
+                    cmd_buffer, image_layouts, texture_manager, material_manager, material_indices_);
+                MirroredBuffer<Vertex>::Slice vertex_slice = io_scene.vertices.Append(mesh_vertices);
+                MirroredBuffer<uint32_t>::Slice index_slice = io_scene.indices.Append(mesh_indices);
+                RenderInstance instance = {};
+                instance.vertex_offset = vertex_slice.offset;
+                instance.index_offset = index_slice.offset;
+                instance.index_count = index_slice.count;
+                instance.material_index = material_index;
+                instance.transform_index = 0;
+                instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+                instance.is_visible = RenderInstance::kVisible;
+                instance.padding0 = vertex_slice.count;
+                out_cached_instances.push_back(instance);
+            }
         }
     }
 
