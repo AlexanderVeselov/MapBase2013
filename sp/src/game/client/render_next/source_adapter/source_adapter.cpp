@@ -140,10 +140,19 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderScene& out_sce
         out_scene.lightmap_atlas, build_cache_.brush_model_ranges);
 
     build_cache_.static_transforms = out_scene.transforms.ToVector();
+    build_cache_.static_vertex_colors = out_scene.vertex_colors.ToVector();
     build_cache_.static_instances = out_scene.instances.ToVector();
 }
 
-void SourceAdapter::UpdateRenderableEntities(RenderScene& scene)
+void SourceAdapter::UpdateRenderableEntities(RenderScene& scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager)
 {
-    renderable_entity_adapter_.UpdateRenderableEntities(scene, build_cache_);
+    if (!device)
+    {
+        return;
+    }
+
+    renderable_entity_adapter_.UpdateRenderableEntities(scene, build_cache_, model_manager_, device,
+        cmd_buffer, image_layouts, texture_manager, material_manager);
 }

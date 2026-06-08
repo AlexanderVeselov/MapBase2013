@@ -19,9 +19,10 @@ public:
     void BuildWorldScene(char const* level_name, RenderScene& out_scene, gpu::DevicePtr const& device,
         gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
         SourceTextureManager& texture_manager, SourceMaterialManager& material_manager) override;
-    void UpdateRenderableEntities(RenderScene& scene) override;
+    void UpdateRenderableEntities(RenderScene& scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+        SourceMaterialManager& material_manager) override;
 
-private:
     SourceRenderableEntityAdapter renderable_entity_adapter_;
     SourceModelManager model_manager_;
     SourceSceneBuildCache build_cache_;

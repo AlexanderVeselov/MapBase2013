@@ -28,6 +28,12 @@ std::string StripExtension(std::string path)
 void TransitionImage(gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
     gpu::ImagePtr const& image, gpu::ImageLayout desired_layout)
 {
+    if (!image)
+    {
+        Warning("render_next: attempted to transition a null texture image\n");
+        return;
+    }
+
     gpu::ImageLayout& current_layout = image_layouts[image.get()];
     if (current_layout == desired_layout)
     {
@@ -42,7 +48,31 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height,
     gpu::ImageFormat format, void const* data, size_t data_size)
 {
+    if (!device)
+    {
+        Warning("render_next: cannot create texture image without a GPU device\n");
+        return {};
+    }
+
+    if (width == 0 || height == 0)
+    {
+        Warning("render_next: cannot create texture image with invalid size %ux%u\n", width, height);
+        return {};
+    }
+
+    if (!data || data_size == 0)
+    {
+        Warning("render_next: cannot create texture image %ux%u without pixel data\n", width, height);
+        return {};
+    }
+
     gpu::ImagePtr image = device->CreateImage(width, height, format, gpu::ImageFlags::kShaderResource);
+    if (!image)
+    {
+        Warning("render_next: CreateImage failed for texture %ux%u\n", width, height);
+        return {};
+    }
+
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kCopyDst);
     cmd_buffer.UploadImage(image, data, data_size);
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kShaderRead);
@@ -116,6 +146,11 @@ void SourceTextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, g
     std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
     gpu::ImagePtr fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, gpu::ImageFormat::kRGBA8_UNorm,
         fallback_pixels.data(), fallback_pixels.size());
+    if (!fallback_texture)
+    {
+        Warning("render_next: failed to create fallback texture\n");
+        return;
+    }
 
     if (textures_.empty())
     {
@@ -152,12 +187,44 @@ uint32_t SourceTextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::Co
         return 0;
     }
 
-    gpu::ImagePtr texture = CreateTextureImage(device, cmd_buffer, image_layouts, width, height, gpu::ImageFormat::kRGBA8_UNorm,
-        rgba_pixels.data(), rgba_pixels.size());
+    gpu::ImagePtr texture;
+    try
+    {
+        texture = CreateTextureImage(device, cmd_buffer, image_layouts, width, height, gpu::ImageFormat::kRGBA8_UNorm,
+            rgba_pixels.data(), rgba_pixels.size());
+    }
+    catch (std::exception const& error)
+    {
+        Warning("render_next: failed to create texture '%s' (%ux%u, %zu bytes): %s\n",
+            texture_name, width, height, rgba_pixels.size(), error.what());
+        texture_ids_by_name_.emplace(texture_name, 0u);
+        return 0;
+    }
+    catch (...)
+    {
+        Warning("render_next: failed to create texture '%s' (%ux%u, %zu bytes): unknown exception\n",
+            texture_name, width, height, rgba_pixels.size());
+        texture_ids_by_name_.emplace(texture_name, 0u);
+        return 0;
+    }
+
+    if (!texture)
+    {
+        Warning("render_next: CreateTextureImage returned null for texture '%s' (%ux%u, %zu bytes)\n",
+            texture_name, width, height, rgba_pixels.size());
+        texture_ids_by_name_.emplace(texture_name, 0u);
+        return 0;
+    }
+
     uint32_t texture_id = static_cast<uint32_t>(textures_.size());
     textures_.push_back(std::move(texture));
     texture_ids_by_name_.emplace(texture_name, texture_id);
     return texture_id;
+}
+
+uint32_t SourceTextureManager::GetTextureCount() const
+{
+    return static_cast<uint32_t>(textures_.size());
 }
 
 gpu::ImagePtr const& SourceTextureManager::GetTexture(uint32_t texture_id) const

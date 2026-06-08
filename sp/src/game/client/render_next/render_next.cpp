@@ -48,6 +48,7 @@ private:
     RenderScene scene_;
     SourceTextureManager texture_manager_;
     SourceMaterialManager material_manager_;
+    uint32_t bound_texture_count_ = 0;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;
 };
@@ -99,6 +100,7 @@ void RenderImpl::Init()
     SubmitRenderCommandsAndWait(backend_);
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
+    bound_texture_count_ = texture_manager_.GetTextureCount();
     render_graph_.Reset();
     render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_scene_task_);
@@ -158,6 +160,7 @@ void RenderImpl::SyncSceneToGpu()
     UploadSkyboxTextures();
     draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
+    bound_texture_count_ = texture_manager_.GetTextureCount();
     SubmitRenderCommandsAndWait(backend_);
 }
 
@@ -208,14 +211,28 @@ void RenderImpl::FinalizeFrame()
 
 void RenderImpl::UpdateRenderableEntities()
 {
-    engine_adapter_.UpdateRenderableEntities(scene_);
-
     if (!backend_.device)
     {
         return;
     }
+
+    EnsureRenderCommandBuffer(backend_);
+    uint32_t texture_count_before_update = texture_manager_.GetTextureCount();
+    engine_adapter_.UpdateRenderableEntities(scene_, backend_.device, *backend_.cmd_buffer,
+        backend_.image_layouts, texture_manager_, material_manager_);
     scene_.transforms.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.vertices.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.indices.Sync(backend_.device, *backend_.cmd_buffer);
+    uint32_t texture_count_after_update = texture_manager_.GetTextureCount();
+    if (texture_count_after_update != texture_count_before_update || texture_count_after_update != bound_texture_count_)
+    {
+        draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
+        sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
+        bound_texture_count_ = texture_count_after_update;
+    }
 }
 
 RenderNext* GetRenderNextInstance()

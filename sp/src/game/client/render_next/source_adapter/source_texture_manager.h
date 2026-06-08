@@ -16,6 +16,7 @@ public:
     uint32_t LoadTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name);
 
+    uint32_t GetTextureCount() const;
     gpu::ImagePtr const& GetTexture(uint32_t texture_id) const;
     void BuildDescriptorArray(uint32_t count, std::vector<gpu::ImageDescriptor>& out_descriptors) const;
 

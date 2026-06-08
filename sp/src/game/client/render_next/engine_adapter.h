@@ -24,5 +24,7 @@ public:
     virtual void BuildWorldScene(char const* level_name, RenderScene& out_scene, gpu::DevicePtr const& device,
         gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
         SourceTextureManager& texture_manager, SourceMaterialManager& material_manager) = 0;
-    virtual void UpdateRenderableEntities(RenderScene& scene) = 0;
+    virtual void UpdateRenderableEntities(RenderScene& scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+        SourceMaterialManager& material_manager) = 0;
 };

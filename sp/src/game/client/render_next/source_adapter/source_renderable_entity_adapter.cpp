@@ -31,10 +31,15 @@ bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
 }
 }
 
-void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene, SourceSceneBuildCache const& build_cache)
+void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene, SourceSceneBuildCache const& build_cache,
+    SourceModelManager& model_manager, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager)
 {
     scene.transforms.Clear();
     scene.transforms.Append(build_cache.static_transforms);
+    scene.vertex_colors.Clear();
+    scene.vertex_colors.Append(build_cache.static_vertex_colors);
     scene.instances.Clear();
     scene.instances.Append(build_cache.static_instances);
 
@@ -84,19 +89,18 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
         if (model_type == mod_studio)
         {
             char const* model_name = modelinfo->GetModelName(model);
-            char const* class_name = "unknown";
-            IClientNetworkable* networkable = entity->GetClientNetworkable();
-            if (networkable)
+            if (!model_name || model_name[0] == '\0')
             {
-                ClientClass* client_class = networkable->GetClientClass();
-                if (client_class && client_class->m_pNetworkName)
-                {
-                    class_name = client_class->m_pNetworkName;
-                }
+                continue;
             }
 
-            //Msg("render_next: studio renderable candidate ent=%d class=%s model=%s\n", entity_index, class_name,
-            //    model_name ? model_name : "<null>");
+            matrix3x4_t model_to_world;
+            AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
+            if (!model_manager.LoadModel(model_name, renderable->GetSkin(), model_to_world, false, scene, device, cmd_buffer,
+                    image_layouts, texture_manager, material_manager))
+            {
+                continue;
+            }
         }
         else if (model_type == mod_brush)
         {

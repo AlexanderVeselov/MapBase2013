@@ -95,8 +95,30 @@ std::string BuildModelCacheKey(char const* model_name, int skin)
     return std::string(model_name ? model_name : "") + "#" + std::to_string(skin);
 }
 
+void ComputeInstanceColor(matrix3x4_t const& model_to_world, float out_color[4])
+{
+    Vector world_position(model_to_world[0][3], model_to_world[1][3], model_to_world[2][3]);
+    Vector world_normal(0.0f, 0.0f, 1.0f);
+    VectorRotate(world_normal, model_to_world, world_normal);
+    if (world_normal.Dot(world_normal) > 0.0f)
+    {
+        world_normal.NormalizeInPlace();
+    }
+
+    Vector lighting(1.0f, 1.0f, 1.0f);
+    if (engine)
+    {
+        engine->ComputeLighting(world_position, &world_normal, true, lighting);
+    }
+
+    out_color[0] = lighting.x;
+    out_color[1] = lighting.y;
+    out_color[2] = lighting.z;
+    out_color[3] = 1.0f;
+}
+
 bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, matrix3x4_t const& model_to_world,
-    RenderScene& io_scene)
+    bool use_per_vertex_lighting, RenderScene& io_scene)
 {
     if (cached_instances.empty())
     {
@@ -107,14 +129,19 @@ bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, m
 
     for (RenderInstance const& cached_instance : cached_instances)
     {
-        uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, cached_instance.vertex_offset,
-            cached_instance.padding0,
-            model_to_world, io_scene.vertex_colors);
-
         RenderInstance instance = cached_instance;
         instance.transform_index = transform_index;
-        instance.vertex_color_offset = vertex_color_offset;
         instance.is_visible = RenderInstance::kVisible;
+        if (use_per_vertex_lighting)
+        {
+            instance.vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, cached_instance.vertex_offset,
+                cached_instance.padding0, model_to_world, io_scene.vertex_colors);
+        }
+        else
+        {
+            instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+            ComputeInstanceColor(model_to_world, instance.color);
+        }
         io_scene.instances.Append(instance);
     }
 
@@ -252,7 +279,8 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
     return !out_cached_instances.empty();
 }
 
-bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
+bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t const& model_to_world,
+    bool use_per_vertex_lighting, RenderScene& io_scene,
     gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
     SourceMaterialManager& material_manager)
@@ -261,7 +289,7 @@ bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t
     auto existing_instance = model_instances_by_key_.find(model_key);
     if (existing_instance != model_instances_by_key_.end())
     {
-        return AppendInstanceRanges(existing_instance->second, model_to_world, io_scene);
+        return AppendInstanceRanges(existing_instance->second, model_to_world, use_per_vertex_lighting, io_scene);
     }
 
     std::vector<RenderInstance> cached_instances;
@@ -273,5 +301,5 @@ bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t
 
     model_instances_by_key_.emplace(model_key, cached_instances);
 
-    return AppendInstanceRanges(cached_instances, model_to_world, io_scene);
+    return AppendInstanceRanges(cached_instances, model_to_world, use_per_vertex_lighting, io_scene);
 }

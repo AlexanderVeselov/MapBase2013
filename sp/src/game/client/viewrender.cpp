@@ -4492,12 +4492,33 @@ static void DrawOpaqueRenderables_DrawStaticProps( CClientRenderablesList::CEntr
 		staticpropmgr->DrawStaticProps( pStatics, numScheduled, DepthMode, vcollide_wireframe.GetBool() );
 }
 
+#ifdef SOURCE_SDK_RENDER_NEXT
+static bool ShouldSkipOpaqueRenderableForRenderNext( IClientRenderable *pRenderable )
+{
+	if ( CurrentViewID() != VIEW_MAIN || !pRenderable || !modelinfo )
+		return false;
+
+	model_t const* model = pRenderable->GetModel();
+	if ( !model )
+		return false;
+
+	modtype_t model_type = static_cast<modtype_t>( modelinfo->GetModelType( model ) );
+	return model_type == mod_studio;
+}
+#endif
+
 static void DrawOpaqueRenderables_Range( CClientRenderablesList::CEntry *pEntitiesBegin, CClientRenderablesList::CEntry *pEntitiesEnd, ERenderDepthMode DepthMode )
 {
 	for( CClientRenderablesList::CEntry *itEntity = pEntitiesBegin; itEntity < pEntitiesEnd; ++ itEntity )
 	{
 		if ( itEntity->m_pRenderable )
+		{
+#ifdef SOURCE_SDK_RENDER_NEXT
+			if ( ShouldSkipOpaqueRenderableForRenderNext( itEntity->m_pRenderable ) )
+				continue;
+#endif
 			DrawOpaqueRenderable( itEntity->m_pRenderable, ( itEntity->m_TwoPass != 0 ), DepthMode );
+		}
 	}
 }
 
