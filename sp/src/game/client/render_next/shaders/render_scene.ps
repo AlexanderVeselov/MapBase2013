@@ -10,6 +10,13 @@ struct PSInput
     float4 prev_clip_position : TEXCOORD5;
 };
 
+cbuffer CameraCB : register(b0)
+{
+    float4x4 g_view_projection;
+    float4x4 g_prev_view_projection;
+    float4 g_camera_jitter;
+};
+
 static const uint RENDER_NEW_MAX_TEXTURES = 512;
 
 struct MaterialData
@@ -63,9 +70,11 @@ PSOutput main(PSInput input)
     float2 prev_ndc = input.prev_clip_position.xy / max(abs(input.prev_clip_position.w), 1e-6f);
     float2 curr_uv = float2(curr_ndc.x, -curr_ndc.y) * 0.5f + 0.5f;
     float2 prev_uv = float2(prev_ndc.x, -prev_ndc.y) * 0.5f + 0.5f;
+    float2 jitter_delta = g_camera_jitter.xy - g_camera_jitter.zw;
+    jitter_delta.x *= 0.5f;
+    jitter_delta.y *= -0.5f;
 
     output.color = float4(output_color, albedo.a);
-    output.velocity = curr_uv - prev_uv;
+    output.velocity = (curr_uv - prev_uv - jitter_delta);
     return output;
 }
-

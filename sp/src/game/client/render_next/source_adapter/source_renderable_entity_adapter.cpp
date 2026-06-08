@@ -79,6 +79,14 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
             continue;
         }
 
+        IClientUnknown* client_unknown = renderable->GetIClientUnknown();
+        C_BaseEntity* base_entity = client_unknown ? client_unknown->GetBaseEntity() : nullptr;
+        C_BaseAnimating* base_animating = base_entity ? base_entity->GetBaseAnimating() : nullptr;
+        if (base_animating && base_animating->IsViewModel())
+        {
+            continue;
+        }
+
         model_t const* model = renderable->GetModel();
         if (!model)
         {
@@ -102,11 +110,9 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
             AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
             uint32_t bone_offset = RenderInstance::kInvalidBoneOffset;
             uint32_t bone_count = 0;
-            IClientUnknown* client_unknown = renderable->GetIClientUnknown();
-            C_BaseEntity* base_entity = client_unknown ? client_unknown->GetBaseEntity() : nullptr;
             if (base_entity)
             {
-                if (C_BaseAnimating* base_animating = base_entity->GetBaseAnimating())
+                if (base_animating)
                 {
                     CStudioHdr* studio_hdr = base_animating->GetModelPtr();
                     if (studio_hdr)

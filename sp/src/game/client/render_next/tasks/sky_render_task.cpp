@@ -33,7 +33,7 @@ void SkyRenderTask::UpdateBindings(RenderBackendResources const& backend_resourc
     descriptor_set_->BindBuffer(*backend_resources.inverse_view_proj_buffer, 0);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*sky_sampler_, 0, 2);
-    descriptor_set_->BindImage(*backend_resources.color_texture, 6);
+    descriptor_set_->BindImage(*backend_resources.scene_color_texture, 6);
 }
 
 char const* SkyRenderTask::GetName() const
@@ -43,11 +43,11 @@ char const* SkyRenderTask::GetName() const
 
 void SkyRenderTask::Execute(RenderTaskContext& context)
 {
-    TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kShaderReadWrite);
+    TransitionRenderImage(context.backend, context.backend_resources.scene_color_texture, gpu::ImageLayout::kShaderReadWrite);
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);
     context.backend.cmd_buffer->SetRootConstants(context.scene.skybox_texture_ids.data(),
         sizeof(uint32_t) * context.scene.skybox_texture_ids.size());
     context.backend.cmd_buffer->Dispatch((context.viewport_width + 15) / 16, (context.viewport_height + 15) / 16, 1);
-    context.backend.cmd_buffer->StorageBarrier(context.backend_resources.color_texture);
+    context.backend.cmd_buffer->StorageBarrier(context.backend_resources.scene_color_texture);
 }

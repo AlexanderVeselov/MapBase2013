@@ -2,6 +2,7 @@ cbuffer CameraCB : register(b0)
 {
     float4x4 g_view_projection;
     float4x4 g_prev_view_projection;
+    float4 g_camera_jitter;
 };
 
 cbuffer g_RootConstants : register(b1)

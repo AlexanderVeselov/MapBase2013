@@ -29,6 +29,7 @@ struct RenderBackendContext
 struct RenderBackendResources
 {
     gpu::ImagePtr color_texture;
+    gpu::ImagePtr scene_color_texture;
     gpu::ImagePtr velocity_texture;
     gpu::ImagePtr depth_texture;
     gpu::ImagePtr shared_depth_texture;

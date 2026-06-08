@@ -66,12 +66,12 @@ char const* DrawSceneTask::GetName() const
 
 void DrawSceneTask::Execute(RenderTaskContext& context)
 {
-    TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kRenderTarget);
+    TransitionRenderImage(context.backend, context.backend_resources.scene_color_texture, gpu::ImageLayout::kRenderTarget);
     TransitionRenderImage(context.backend, context.backend_resources.velocity_texture, gpu::ImageLayout::kRenderTarget);
     TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
     context.backend.cmd_buffer->ClearImage(context.backend_resources.velocity_texture, 0.0f, 0.0f, 0.0f, 0.0f);
     context.backend.cmd_buffer->SetRenderTargets(
-        {context.backend_resources.color_texture, context.backend_resources.velocity_texture},
+        {context.backend_resources.scene_color_texture, context.backend_resources.velocity_texture},
         context.backend_resources.depth_texture);
     context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
     gpu::BufferPtr const& vertex_buffer = context.scene.vertices.GpuBuffer();

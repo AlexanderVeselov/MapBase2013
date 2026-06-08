@@ -33,6 +33,8 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
     context.graphics_queue = &context.device->GetQueue(gpu::QueueType::kGraphics);
 
     InitSharedTextures(*context.device, resources.color_texture, resources.shared_depth_texture);
+    resources.scene_color_texture = context.device->CreateImage(resources.color_texture->GetWidth(), resources.color_texture->GetHeight(),
+        gpu::ImageFormat::kBGRA8_UNorm, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kRenderTarget | gpu::ImageFlags::kStorage);
     resources.velocity_texture = context.device->CreateImage(resources.color_texture->GetWidth(), resources.color_texture->GetHeight(),
         gpu::ImageFormat::kRG16_Float, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kRenderTarget);
     resources.depth_texture = context.device->CreateImage(resources.color_texture->GetWidth(), resources.color_texture->GetHeight(),

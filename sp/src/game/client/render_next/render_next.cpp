@@ -11,12 +11,14 @@
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
 #include "tasks/draw_scene_task.h"
+#include "tasks/taa_task.h"
 #include "tasks/copy_depth_task.h"
 #include "dx9_interop.h"
 #include "mathlib/vmatrix.h"
 #include "convar.h"
 
 #include <array>
+#include <cmath>
 #include <string>
 
 class RenderImpl : public RenderNext
@@ -44,6 +46,7 @@ private:
     RenderGraph render_graph_;
     SkyRenderTask sky_render_task_;
     DrawSceneTask draw_scene_task_;
+    TaaTask taa_task_;
     CopyDepthTask copy_depth_task_;
     RenderScene scene_;
     SourceTextureManager texture_manager_;
@@ -51,10 +54,48 @@ private:
     uint32_t bound_texture_count_ = 0;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;
+    uint32_t jitter_frame_index_ = 0;
+    Vector2D previous_camera_jitter_ = Vector2D(0.0f, 0.0f);
+    Vector2D current_camera_jitter_ = Vector2D(0.0f, 0.0f);
     VMatrix previous_view_projection_matrix_ = {};
     VMatrix current_view_projection_matrix_ = {};
     bool has_previous_view_projection_ = false;
 };
+
+namespace
+{
+float ComputeHalton(uint32_t index, uint32_t base)
+{
+    float value = 0.0f;
+    float inverse_base = 1.0f / static_cast<float>(base);
+    float inverse_base_power = inverse_base;
+    while (index > 0)
+    {
+        value += static_cast<float>(index % base) * inverse_base_power;
+        index /= base;
+        inverse_base_power *= inverse_base;
+    }
+
+    return value;
+}
+
+Vector2D ComputeCameraJitter(uint32_t frame_index, uint32_t viewport_width, uint32_t viewport_height)
+{
+    uint32_t sample_index = frame_index % 8u + 1u;
+    float jitter_x = (ComputeHalton(sample_index, 2) - 0.5f) * (2.0f / static_cast<float>(Max(viewport_width, 1u)));
+    float jitter_y = (ComputeHalton(sample_index, 3) - 0.5f) * (-2.0f / static_cast<float>(Max(viewport_height, 1u)));
+    return Vector2D(jitter_x, jitter_y);
+}
+
+void ApplyProjectionJitter(VMatrix const& view_projection_matrix, Vector2D const& jitter, VMatrix* jittered_view_projection_matrix)
+{
+    VMatrix jitter_matrix;
+    jitter_matrix.Identity();
+    jitter_matrix[0][3] = jitter.x;
+    jitter_matrix[1][3] = jitter.y;
+    MatrixMultiply(jitter_matrix, view_projection_matrix, *jittered_view_projection_matrix);
+}
+}
 
 void ComputeViewMatrix(VMatrix* pViewMatrix, const Vector& origin, const QAngle& angles)
 {
@@ -101,6 +142,7 @@ void RenderImpl::Init()
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     sky_render_task_.Initialize(backend_.device, backend_resources_, scene_, texture_manager_);
     draw_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_);
+    taa_task_.Initialize(backend_.device);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
     UploadSkyboxTextures();
     SubmitRenderCommandsAndWait(backend_);
@@ -110,6 +152,7 @@ void RenderImpl::Init()
     render_graph_.Reset();
     render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_scene_task_);
+    render_graph_.AddTask(taa_task_);
     render_graph_.AddTask(copy_depth_task_);
 }
 
@@ -183,6 +226,10 @@ void RenderImpl::BuildScene(char const* level_name)
     engine_adapter_.BuildWorldScene(level_name, scene_, backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
         texture_manager_, material_manager_);
     has_previous_view_projection_ = false;
+    jitter_frame_index_ = 0;
+    previous_camera_jitter_ = Vector2D(0.0f, 0.0f);
+    current_camera_jitter_ = Vector2D(0.0f, 0.0f);
+    taa_task_.ResetHistory();
 }
 
 void RenderImpl::SyncSceneToGpu()
@@ -211,6 +258,7 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
     {
         VMatrix current_view_projection;
         VMatrix previous_view_projection;
+        float jitter_uv[4];
     };
 
     viewport_width_ = backend_resources_.color_texture->GetWidth();
@@ -222,17 +270,28 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
     VMatrix view_matrix, projection_matrix, view_projection_matrix;
     ComputeViewMatrices(view_setup, &view_matrix, &projection_matrix, &view_projection_matrix);
+    Vector2D jitter = ComputeCameraJitter(jitter_frame_index_, viewport_width_, viewport_height_);
+    current_camera_jitter_ = jitter;
+    VMatrix jittered_view_projection_matrix;
+    ApplyProjectionJitter(view_projection_matrix, jitter, &jittered_view_projection_matrix);
     VMatrix inverse_view_projection_matrix;
-    MatrixInverseGeneral(view_projection_matrix, inverse_view_projection_matrix);
-    MatrixTranspose(view_projection_matrix, view_projection_matrix);
+    MatrixInverseGeneral(jittered_view_projection_matrix, inverse_view_projection_matrix);
+    MatrixTranspose(jittered_view_projection_matrix, jittered_view_projection_matrix);
     MatrixTranspose(inverse_view_projection_matrix, inverse_view_projection_matrix);
-    current_view_projection_matrix_ = view_projection_matrix;
+    current_view_projection_matrix_ = jittered_view_projection_matrix;
 
     CameraFrameData camera_frame_data = {};
     camera_frame_data.current_view_projection = current_view_projection_matrix_;
     camera_frame_data.previous_view_projection = has_previous_view_projection_
         ? previous_view_projection_matrix_
         : current_view_projection_matrix_;
+    Vector2D previous_jitter = has_previous_view_projection_
+        ? previous_camera_jitter_
+        : current_camera_jitter_;
+    camera_frame_data.jitter_uv[0] = current_camera_jitter_.x;
+    camera_frame_data.jitter_uv[1] = current_camera_jitter_.y;
+    camera_frame_data.jitter_uv[2] = previous_jitter.x;
+    camera_frame_data.jitter_uv[3] = previous_jitter.y;
 
     UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.camera_staging_buffer,
         backend_resources_.camera_buffer, &camera_frame_data, sizeof(camera_frame_data));
@@ -253,7 +312,9 @@ void RenderImpl::FinalizeFrame()
     SnapshotCurrentTransformsAsPrevious();
     SubmitRenderCommandsAndWait(backend_);
     previous_view_projection_matrix_ = current_view_projection_matrix_;
+    previous_camera_jitter_ = current_camera_jitter_;
     has_previous_view_projection_ = true;
+    ++jitter_frame_index_;
     DX9_RenderFrame();
 }
 
