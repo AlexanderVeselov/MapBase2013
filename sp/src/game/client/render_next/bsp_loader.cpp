@@ -4,28 +4,30 @@
 #include "source_adapter/source_scene_utils.h"
 #include "bspfile.h"
 #include "gamebspfile.h"
+#include "filesystem.h"
+#include "tier1/utlbuffer.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <cstring>
-#include <fstream>
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 template<typename T>
-bool ReadLump(std::ifstream& f, lump_t const& l, std::vector<T>& out)
+bool ReadLump(uint8_t const* file_data, size_t file_size, lump_t const& l, std::vector<T>& out)
 {
     if (l.fileofs <= 0 || l.filelen <= 0) return true; // empty is ok
     if (l.filelen % (int)sizeof(T) != 0) return false;
+    if (static_cast<size_t>(l.fileofs) + static_cast<size_t>(l.filelen) > file_size) return false;
 
     const size_t count = (size_t)l.filelen / sizeof(T);
     out.resize(count);
 
-    f.seekg(l.fileofs, std::ios::beg);
-    f.read(reinterpret_cast<char*>(out.data()), (std::streamsize)l.filelen);
-    return f.good() && !out.empty();
+    std::memcpy(out.data(), file_data + l.fileofs, static_cast<size_t>(l.filelen));
+    return !out.empty();
 }
 
 inline void CalcUV(const Vector& p, const texinfo_t& ti, float uv[2])
@@ -216,13 +218,67 @@ struct BspLoadData
     std::vector<char> texdata_string_data;
 };
 
-bool LoadBspHeader(std::ifstream& file, dheader_t& out_header)
+std::array<std::string, 3> GetBspFilesystemCandidates(char const* filename)
 {
-    file.read(reinterpret_cast<char*>(&out_header), sizeof(dheader_t));
-    if (!file.good())
+    std::string requested_name = filename ? filename : "";
+    std::replace(requested_name.begin(), requested_name.end(), '\\', '/');
+
+    std::array<std::string, 3> candidates = {};
+    candidates[0] = requested_name;
+
+    if (!requested_name.empty() && requested_name.find('/') == std::string::npos)
+    {
+        candidates[1] = "maps/" + requested_name;
+    }
+
+    if (!requested_name.empty() && requested_name.find(".bsp") == std::string::npos)
+    {
+        if (requested_name.find('/') == std::string::npos)
+        {
+            candidates[2] = "maps/" + requested_name + ".bsp";
+        }
+        else if (candidates[1].empty())
+        {
+            candidates[2] = requested_name + ".bsp";
+        }
+    }
+
+    return candidates;
+}
+
+bool ReadBspFileBytes(char const* filename, CUtlBuffer& out_buffer)
+{
+    out_buffer.Clear();
+
+    if (!g_pFullFileSystem || !filename || filename[0] == '\0')
     {
         return false;
     }
+
+    for (std::string const& candidate : GetBspFilesystemCandidates(filename))
+    {
+        if (candidate.empty())
+        {
+            continue;
+        }
+
+        if (g_pFullFileSystem->ReadFile(candidate.c_str(), "GAME", out_buffer))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool LoadBspHeader(uint8_t const* file_data, size_t file_size, dheader_t& out_header)
+{
+    if (!file_data || file_size < sizeof(dheader_t))
+    {
+        return false;
+    }
+
+    std::memcpy(&out_header, file_data, sizeof(dheader_t));
 
     if (out_header.ident != IDBSPHEADER)
     {
@@ -232,37 +288,37 @@ bool LoadBspHeader(std::ifstream& file, dheader_t& out_header)
     return out_header.version >= MINBSPVERSION && out_header.version <= BSPVERSION;
 }
 
-bool LoadBspGeometryLumps(std::ifstream& file, dheader_t const& header, BspLoadData& out_data)
+bool LoadBspGeometryLumps(uint8_t const* file_data, size_t file_size, dheader_t const& header, BspLoadData& out_data)
 {
-    if (!ReadLump(file, header.lumps[LUMP_VERTEXES], out_data.vertexes)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_EDGES], out_data.edges)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_SURFEDGES], out_data.surfedges)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_FACES], out_data.faces)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_MODELS], out_data.models)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_VERTEXES], out_data.vertexes)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_EDGES], out_data.edges)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_SURFEDGES], out_data.surfedges)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_FACES], out_data.faces)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_MODELS], out_data.models)) return false;
     return true;
 }
 
-bool LoadBspMaterialLumps(std::ifstream& file, dheader_t const& header, BspLoadData& out_data)
+bool LoadBspMaterialLumps(uint8_t const* file_data, size_t file_size, dheader_t const& header, BspLoadData& out_data)
 {
-    if (!ReadLump(file, header.lumps[LUMP_TEXINFO], out_data.texinfo)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_TEXDATA], out_data.texdata)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_TEXDATA_STRING_TABLE], out_data.texdata_string_table)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_TEXDATA_STRING_DATA], out_data.texdata_string_data)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_TEXINFO], out_data.texinfo)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_TEXDATA], out_data.texdata)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_TEXDATA_STRING_TABLE], out_data.texdata_string_table)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_TEXDATA_STRING_DATA], out_data.texdata_string_data)) return false;
     return true;
 }
 
-bool LoadBspDisplacementLumps(std::ifstream& file, dheader_t const& header, BspLoadData& out_data)
+bool LoadBspDisplacementLumps(uint8_t const* file_data, size_t file_size, dheader_t const& header, BspLoadData& out_data)
 {
-    if (!ReadLump(file, header.lumps[LUMP_DISPINFO], out_data.dispinfo)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_DISP_VERTS], out_data.dispverts)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_DISP_TRIS], out_data.disptris)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_DISPINFO], out_data.dispinfo)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_DISP_VERTS], out_data.dispverts)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_DISP_TRIS], out_data.disptris)) return false;
     return true;
 }
 
-bool LoadBspLightingLumps(std::ifstream& file, dheader_t const& header, BspLoadData& out_data)
+bool LoadBspLightingLumps(uint8_t const* file_data, size_t file_size, dheader_t const& header, BspLoadData& out_data)
 {
-    if (!ReadLump(file, header.lumps[LUMP_LIGHTING], out_data.lighting)) return false;
-    if (!ReadLump(file, header.lumps[LUMP_LIGHTING_HDR], out_data.lighting_hdr)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_LIGHTING], out_data.lighting)) return false;
+    if (!ReadLump(file_data, file_size, header.lumps[LUMP_LIGHTING_HDR], out_data.lighting_hdr)) return false;
     return true;
 }
 
@@ -818,24 +874,27 @@ void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& 
     SourceMaterialManager& material_manager, SourceModelManager& model_manager, LightmapAtlas& out_lightmap_atlas,
     std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
-    std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
+    CUtlBuffer bsp_file_data(0, 0, CUtlBuffer::READ_ONLY);
     out_brush_model_ranges.clear();
     InitializeFallbackLightmapAtlas(out_lightmap_atlas);
 
-    if (!f.is_open())
+    if (!ReadBspFileBytes(filename, bsp_file_data))
         return;
 
+    uint8_t const* bsp_bytes = static_cast<uint8_t const*>(bsp_file_data.Base());
+    size_t bsp_size = static_cast<size_t>(bsp_file_data.TellPut());
+
     dheader_t hdr;
-    if (!LoadBspHeader(f, hdr))
+    if (!LoadBspHeader(bsp_bytes, bsp_size, hdr))
     {
         return;
     }
 
     BspLoadData bsp = {};
-    if (!LoadBspGeometryLumps(f, hdr, bsp)) return;
-    if (!LoadBspMaterialLumps(f, hdr, bsp)) return;
-    if (!LoadBspDisplacementLumps(f, hdr, bsp)) return;
-    if (!LoadBspLightingLumps(f, hdr, bsp)) return;
+    if (!LoadBspGeometryLumps(bsp_bytes, bsp_size, hdr, bsp)) return;
+    if (!LoadBspMaterialLumps(bsp_bytes, bsp_size, hdr, bsp)) return;
+    if (!LoadBspDisplacementLumps(bsp_bytes, bsp_size, hdr, bsp)) return;
+    if (!LoadBspLightingLumps(bsp_bytes, bsp_size, hdr, bsp)) return;
 
     std::vector<PackedLightmapRect> face_lightmap_rects = BuildLightmapAtlas(bsp, out_lightmap_atlas);
     if (bsp.models.empty())
@@ -886,21 +945,17 @@ void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_
 {
     out_static_props.clear();
 
-    std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
-    if (!f.is_open())
+    CUtlBuffer bsp_file_data(0, 0, CUtlBuffer::READ_ONLY);
+    if (!ReadBspFileBytes(filename, bsp_file_data))
     {
         return;
     }
+
+    uint8_t const* bsp_bytes = static_cast<uint8_t const*>(bsp_file_data.Base());
+    size_t bsp_size = static_cast<size_t>(bsp_file_data.TellPut());
 
     dheader_t hdr;
-    f.read(reinterpret_cast<char*>(&hdr), sizeof(dheader_t));
-
-    if (hdr.ident != IDBSPHEADER)
-    {
-        return;
-    }
-
-    if (hdr.version < MINBSPVERSION || hdr.version > BSPVERSION)
+    if (!LoadBspHeader(bsp_bytes, bsp_size, hdr))
     {
         return;
     }
@@ -910,14 +965,13 @@ void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_
     {
         return;
     }
-
-    std::vector<uint8_t> game_lump_bytes(static_cast<size_t>(game_lump.filelen));
-    f.seekg(game_lump.fileofs, std::ios::beg);
-    f.read(reinterpret_cast<char*>(game_lump_bytes.data()), static_cast<std::streamsize>(game_lump_bytes.size()));
-    if (!f.good())
+    if (static_cast<size_t>(game_lump.fileofs) + static_cast<size_t>(game_lump.filelen) > bsp_size)
     {
         return;
     }
+
+    std::vector<uint8_t> game_lump_bytes(static_cast<size_t>(game_lump.filelen));
+    std::memcpy(game_lump_bytes.data(), bsp_bytes + game_lump.fileofs, game_lump_bytes.size());
 
     if (game_lump_bytes.size() < sizeof(dgamelumpheader_t))
     {
@@ -960,12 +1014,11 @@ void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_
     }
 
     std::vector<uint8_t> static_prop_bytes(static_cast<size_t>(static_prop_lump_info->filelen));
-    f.seekg(static_prop_lump_info->fileofs, std::ios::beg);
-    f.read(reinterpret_cast<char*>(static_prop_bytes.data()), static_cast<std::streamsize>(static_prop_bytes.size()));
-    if (!f.good())
+    if (static_cast<size_t>(static_prop_lump_info->fileofs) + static_cast<size_t>(static_prop_lump_info->filelen) > bsp_size)
     {
         return;
     }
+    std::memcpy(static_prop_bytes.data(), bsp_bytes + static_prop_lump_info->fileofs, static_prop_bytes.size());
 
     uint8_t const* cursor = static_prop_bytes.data();
     uint8_t const* end = static_prop_bytes.data() + static_prop_bytes.size();
