@@ -28,14 +28,7 @@ struct InstanceData
 StructuredBuffer<InstanceData> g_scene_instances : register(t2);
 StructuredBuffer<float4> g_scene_vertex_colors : register(t3);
 
-struct BoneMatrix
-{
-    float4 row0;
-    float4 row1;
-    float4 row2;
-};
-
-StructuredBuffer<BoneMatrix> g_scene_bones : register(t4);
+StructuredBuffer<float4x4> g_scene_bones : register(t4);
 
 struct VSInput
 {
@@ -56,23 +49,6 @@ struct VSOutput
     uint material_index : TEXCOORD2;
     float3 color : TEXCOORD3;
 };
-
-float3 TransformPosition(float3 position, BoneMatrix matrix)
-{
-    float4 local_position = float4(position, 1.0f);
-    return float3(
-        dot(matrix.row0, local_position),
-        dot(matrix.row1, local_position),
-        dot(matrix.row2, local_position));
-}
-
-float3 TransformDirection(float3 direction, BoneMatrix matrix)
-{
-    return float3(
-        dot(matrix.row0.xyz, direction),
-        dot(matrix.row1.xyz, direction),
-        dot(matrix.row2.xyz, direction));
-}
 
 VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
 {
@@ -100,9 +76,9 @@ VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
                 continue;
             }
 
-            BoneMatrix bone_matrix = g_scene_bones[instance_data.bone_offset + bone_index];
-            world_position_xyz += TransformPosition(input.position, bone_matrix) * bone_weight;
-            world_normal += TransformDirection(input.normal, bone_matrix) * bone_weight;
+            float4x4 bone_matrix = g_scene_bones[instance_data.bone_offset + bone_index];
+            world_position_xyz += mul(float4(input.position, 1.0f), bone_matrix).xyz * bone_weight;
+            world_normal += mul(input.normal, (float3x3)bone_matrix) * bone_weight;
         }
     }
     else

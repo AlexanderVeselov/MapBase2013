@@ -83,19 +83,33 @@ struct VertexColorData
 
 struct SceneBoneMatrix
 {
-    float m[3][4] = {};
+    float m[4][4] = {};
 };
 
 inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
 {
     SceneBoneMatrix bone_matrix = {};
-    for (int row = 0; row < 3; ++row)
-    {
-        for (int column = 0; column < 4; ++column)
-        {
-            bone_matrix.m[row][column] = source_transform[row][column];
-        }
-    }
+
+    bone_matrix.m[0][0] = source_transform[0][0];
+    bone_matrix.m[0][1] = source_transform[1][0];
+    bone_matrix.m[0][2] = source_transform[2][0];
+    bone_matrix.m[0][3] = 0.0f;
+
+    bone_matrix.m[1][0] = source_transform[0][1];
+    bone_matrix.m[1][1] = source_transform[1][1];
+    bone_matrix.m[1][2] = source_transform[2][1];
+    bone_matrix.m[1][3] = 0.0f;
+
+    bone_matrix.m[2][0] = source_transform[0][2];
+    bone_matrix.m[2][1] = source_transform[1][2];
+    bone_matrix.m[2][2] = source_transform[2][2];
+    bone_matrix.m[2][3] = 0.0f;
+
+    bone_matrix.m[3][0] = source_transform[0][3];
+    bone_matrix.m[3][1] = source_transform[1][3];
+    bone_matrix.m[3][2] = source_transform[2][3];
+    bone_matrix.m[3][3] = 1.0f;
+
     return bone_matrix;
 }
 

@@ -116,7 +116,10 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
                             bone_offset = scene.bones.Size();
                             for (uint32_t bone_index = 0; bone_index < bone_count; ++bone_index)
                             {
-                                scene.bones.Append(MakeSceneBoneMatrix(bone_to_world[bone_index]));
+                                matrix3x4_t skin_matrix;
+                                ConcatTransforms(bone_to_world[bone_index], studio_hdr->pBone(static_cast<int>(bone_index))->poseToBone,
+                                    skin_matrix);
+                                scene.bones.Append(MakeSceneBoneMatrix(skin_matrix));
                             }
                         }
                     }
