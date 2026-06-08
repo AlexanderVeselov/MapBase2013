@@ -25,6 +25,7 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
     sampler_desc.address_u = gpu::SamplerAddressMode::kRepeat;
     sampler_desc.address_v = gpu::SamplerAddressMode::kRepeat;
+    sampler_desc.max_anisotropy = 8;
     texture_sampler_ = device->GetSampler(sampler_desc);
 
     gpu::SamplerDesc lightmap_sampler_desc;

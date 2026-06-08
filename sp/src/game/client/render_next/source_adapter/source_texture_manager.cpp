@@ -10,6 +10,13 @@
 
 namespace
 {
+struct LoadedTextureData
+{
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::vector<std::vector<uint8_t>> mip_pixels;
+};
+
 std::array<uint8_t, 16> MakeFallbackTexturePixels()
 {
     return {255, 0, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 0, 255, 255};
@@ -46,7 +53,7 @@ void TransitionImage(gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Ima
 
 gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, uint32_t width, uint32_t height,
-    gpu::ImageFormat format, void const* data, size_t data_size)
+    gpu::ImageFormat format, std::vector<std::vector<uint8_t>> const& mip_pixels)
 {
     if (!device)
     {
@@ -60,13 +67,15 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
         return {};
     }
 
-    if (!data || data_size == 0)
+    if (mip_pixels.empty() || mip_pixels[0].empty())
     {
         Warning("render_next: cannot create texture image %ux%u without pixel data\n", width, height);
         return {};
     }
 
-    gpu::ImagePtr image = device->CreateImage(width, height, format, gpu::ImageFlags::kShaderResource);
+    uint32_t mip_count = static_cast<uint32_t>(mip_pixels.size());
+    gpu::ImageFlags flags = gpu::ImageFlags::kShaderResource;
+    gpu::ImagePtr image = device->CreateImage(width, height, format, flags, mip_count);
     if (!image)
     {
         Warning("render_next: CreateImage failed for texture %ux%u\n", width, height);
@@ -74,12 +83,23 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
     }
 
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kCopyDst);
-    cmd_buffer.UploadImage(image, data, data_size);
+    for (uint32_t mip_level = 0; mip_level < mip_count; ++mip_level)
+    {
+        std::vector<uint8_t> const& mip_data = mip_pixels[mip_level];
+        if (mip_data.empty())
+        {
+            Warning("render_next: texture mip %u for %ux%u is empty\n", mip_level, width, height);
+            return {};
+        }
+
+        cmd_buffer.UploadImage(image, mip_data.data(), mip_data.size(), mip_level);
+    }
+
     TransitionImage(cmd_buffer, image_layouts, image, gpu::ImageLayout::kShaderRead);
     return image;
 }
 
-bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels, uint32_t& out_width, uint32_t& out_height)
+bool LoadTextureRgba(char const* texture_name, LoadedTextureData& out_texture)
 {
     if (!texture_name || texture_name[0] == '\0')
     {
@@ -115,18 +135,46 @@ bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels,
         }
 
         constexpr ::ImageFormat kDstFormat = IMAGE_FORMAT_RGBA8888;
-        size_t image_size = static_cast<size_t>(ImageLoader::GetMemRequired(width, height, 1, kDstFormat, false));
-        out_pixels.resize(image_size);
-
-        if (!ImageLoader::ConvertImageFormat(vtf_texture->ImageData(0, 0, 0), vtf_texture->Format(), out_pixels.data(),
-                kDstFormat, width, height, 0, 0))
+        out_texture.width = static_cast<uint32_t>(width);
+        out_texture.height = static_cast<uint32_t>(height);
+        int mip_count = vtf_texture->MipCount();
+        if (mip_count <= 0)
         {
-            out_pixels.clear();
             break;
         }
 
-        out_width = static_cast<uint32_t>(width);
-        out_height = static_cast<uint32_t>(height);
+        out_texture.mip_pixels.clear();
+        out_texture.mip_pixels.resize(mip_count);
+
+        for (int mip_level = 0; mip_level < mip_count; ++mip_level)
+        {
+            int mip_width = 0;
+            int mip_height = 0;
+            int mip_depth = 0;
+            vtf_texture->ComputeMipLevelDimensions(mip_level, &mip_width, &mip_height, &mip_depth);
+            if (mip_width <= 0 || mip_height <= 0)
+            {
+                out_texture.mip_pixels.clear();
+                break;
+            }
+
+            size_t image_size = static_cast<size_t>(ImageLoader::GetMemRequired(mip_width, mip_height, 1, kDstFormat, false));
+            std::vector<uint8_t>& mip_pixels = out_texture.mip_pixels[mip_level];
+            mip_pixels.resize(image_size);
+
+            if (!ImageLoader::ConvertImageFormat(vtf_texture->ImageData(0, 0, mip_level), vtf_texture->Format(),
+                    mip_pixels.data(), kDstFormat, mip_width, mip_height, 0, 0))
+            {
+                out_texture.mip_pixels.clear();
+                break;
+            }
+        }
+
+        if (out_texture.mip_pixels.empty())
+        {
+            break;
+        }
+
         success = true;
     } while (false);
 
@@ -151,7 +199,7 @@ void SourceTextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, g
 
     std::array<uint8_t, 16> fallback_pixels = MakeFallbackTexturePixels();
     gpu::ImagePtr fallback_texture = CreateTextureImage(device, cmd_buffer, image_layouts, 2, 2, gpu::ImageFormat::kRGBA8_UNorm,
-        fallback_pixels.data(), fallback_pixels.size());
+        {std::vector<uint8_t>(fallback_pixels.begin(), fallback_pixels.end())});
     if (!fallback_texture)
     {
         Warning("render_next: failed to create fallback texture\n");
@@ -184,10 +232,8 @@ uint32_t SourceTextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::Co
         return existing->second;
     }
 
-    std::vector<uint8_t> rgba_pixels;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    if (!LoadTextureRgba(texture_name, rgba_pixels, width, height))
+    LoadedTextureData texture_data;
+    if (!LoadTextureRgba(texture_name, texture_data))
     {
         texture_ids_by_name_.emplace(texture_name, 0u);
         return 0;
@@ -196,20 +242,22 @@ uint32_t SourceTextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::Co
     gpu::ImagePtr texture;
     try
     {
-        texture = CreateTextureImage(device, cmd_buffer, image_layouts, width, height, gpu::ImageFormat::kRGBA8_UNorm,
-            rgba_pixels.data(), rgba_pixels.size());
+        texture = CreateTextureImage(device, cmd_buffer, image_layouts, texture_data.width, texture_data.height,
+            gpu::ImageFormat::kRGBA8_UNorm, texture_data.mip_pixels);
     }
     catch (std::exception const& error)
     {
         Warning("render_next: failed to create texture '%s' (%ux%u, %zu bytes): %s\n",
-            texture_name, width, height, rgba_pixels.size(), error.what());
+            texture_name, texture_data.width, texture_data.height,
+            texture_data.mip_pixels.empty() ? 0 : texture_data.mip_pixels[0].size(), error.what());
         texture_ids_by_name_.emplace(texture_name, 0u);
         return 0;
     }
     catch (...)
     {
         Warning("render_next: failed to create texture '%s' (%ux%u, %zu bytes): unknown exception\n",
-            texture_name, width, height, rgba_pixels.size());
+            texture_name, texture_data.width, texture_data.height,
+            texture_data.mip_pixels.empty() ? 0 : texture_data.mip_pixels[0].size());
         texture_ids_by_name_.emplace(texture_name, 0u);
         return 0;
     }
@@ -217,7 +265,8 @@ uint32_t SourceTextureManager::LoadTexture(gpu::DevicePtr const& device, gpu::Co
     if (!texture)
     {
         Warning("render_next: CreateTextureImage returned null for texture '%s' (%ux%u, %zu bytes)\n",
-            texture_name, width, height, rgba_pixels.size());
+            texture_name, texture_data.width, texture_data.height,
+            texture_data.mip_pixels.empty() ? 0 : texture_data.mip_pixels[0].size());
         texture_ids_by_name_.emplace(texture_name, 0u);
         return 0;
     }
@@ -255,6 +304,12 @@ void SourceTextureManager::BuildDescriptorArray(uint32_t count, std::vector<gpu:
     for (uint32_t texture_index = 0; texture_index < count; ++texture_index)
     {
         gpu::ImagePtr const& image = GetTexture(texture_index);
-        out_descriptors[texture_index] = gpu::ImageDescriptor{image.get(), {}};
+        gpu::ImageView full_view = {};
+        if (image)
+        {
+            full_view.mip_count = image->GetMipCount();
+        }
+
+        out_descriptors[texture_index] = gpu::ImageDescriptor{image.get(), full_view};
     }
 }

@@ -16,6 +16,7 @@ void SkyRenderTask::Initialize(gpu::DevicePtr const& device, RenderBackendResour
     sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
     sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
     sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
+    sampler_desc.max_anisotropy = 8;
     sky_sampler_ = device->GetSampler(sampler_desc);
 
     descriptor_set_ = pipeline_->CreateDescriptorSet();
