@@ -115,13 +115,13 @@ inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
 
 struct RenderScene
 {
-    MirroredBuffer<Vertex> vertices{gpu::BufferFlags::kCpuAccess};
-    MirroredBuffer<uint32_t> indices{gpu::BufferFlags::kCpuAccess};
-    MirroredBuffer<SceneTransform> transforms;
-    MirroredBuffer<SceneBoneMatrix> bones;
-    MirroredBuffer<VertexColorData> vertex_colors;
-    MirroredBuffer<RenderInstance> instances;
-    MirroredBuffer<Material> materials;
+    MirroredBuffer<Vertex> vertices;
+    MirroredBuffer<uint32_t> indices;
+    MirroredBuffer<SceneTransform> transforms{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<SceneBoneMatrix> bones{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<VertexColorData> vertex_colors{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<RenderInstance> instances{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<Material> materials{gpu::BufferFlags::kShaderResource};
     LightmapAtlas lightmap_atlas;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;

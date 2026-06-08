@@ -16,7 +16,6 @@
 #include "mathlib/vmatrix.h"
 #include "convar.h"
 
-#include <cstring>
 #include <array>
 #include <string>
 
@@ -191,12 +190,10 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
     MatrixTranspose(view_projection_matrix, view_projection_matrix);
     MatrixTranspose(inverse_view_projection_matrix, inverse_view_projection_matrix);
 
-    void* mapped_data = backend_resources_.view_proj_buffer->Map();
-    std::memcpy(mapped_data, view_projection_matrix.Base(), sizeof(VMatrix));
-    backend_resources_.view_proj_buffer->Unmap();
-    void* inverse_mapped_data = backend_resources_.inverse_view_proj_buffer->Map();
-    std::memcpy(inverse_mapped_data, inverse_view_projection_matrix.Base(), sizeof(VMatrix));
-    backend_resources_.inverse_view_proj_buffer->Unmap();
+    UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.view_proj_staging_buffer,
+        backend_resources_.view_proj_buffer, view_projection_matrix.Base(), sizeof(VMatrix));
+    UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.inverse_view_proj_staging_buffer,
+        backend_resources_.inverse_view_proj_buffer, inverse_view_projection_matrix.Base(), sizeof(VMatrix));
 
     TransitionRenderImage(backend_, backend_resources_.depth_texture, gpu::ImageLayout::kRenderTarget);
 }

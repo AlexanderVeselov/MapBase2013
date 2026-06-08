@@ -32,7 +32,9 @@ struct RenderBackendResources
     gpu::ImagePtr depth_texture;
     gpu::ImagePtr shared_depth_texture;
     gpu::BufferPtr view_proj_buffer;
+    gpu::BufferPtr view_proj_staging_buffer;
     gpu::BufferPtr inverse_view_proj_buffer;
+    gpu::BufferPtr inverse_view_proj_staging_buffer;
 };
 
 void InitializeRenderBackend(char const* source_file_path, RenderBackendContext& context,
@@ -40,4 +42,5 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
 void EnsureRenderCommandBuffer(RenderBackendContext& context);
 void TransitionRenderImage(RenderBackendContext& context, gpu::ImagePtr const& image, gpu::ImageLayout desired_layout);
 void SubmitRenderCommandsAndWait(RenderBackendContext& context);
-
+void UploadBufferData(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer, gpu::BufferPtr& staging_buffer,
+    gpu::BufferPtr const& dst_buffer, void const* data, size_t data_size);

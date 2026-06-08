@@ -20,7 +20,7 @@ public:
         uint32_t count = 0;
     };
 
-    explicit MirroredBuffer(gpu::BufferFlags flags = gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kShaderResource)
+    explicit MirroredBuffer(gpu::BufferFlags flags = gpu::BufferFlags::kNone)
         : flags_(flags)
     {
     }
@@ -69,27 +69,26 @@ public:
     {
         cpu_data_.clear();
         gpu_buffer_.reset();
+        staging_buffer_.reset();
         ClearDirty();
     }
 
     void Sync(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer)
     {
-        (void)cmd_buffer;
-
         uint32_t element_count = cpu_data_.empty() ? 1u : static_cast<uint32_t>(cpu_data_.size());
         uint64_t required_size = static_cast<uint64_t>(sizeof(T)) * element_count;
 
         if (!gpu_buffer_)
         {
             gpu_buffer_ = device->CreateBuffer(required_size, sizeof(T), flags_);
-            UploadWholeBuffer();
+            UploadWholeBuffer(device, cmd_buffer, required_size);
             return;
         }
 
         if (gpu_buffer_->GetSize() < required_size)
         {
             gpu_buffer_->Resize(required_size);
-            UploadWholeBuffer();
+            UploadWholeBuffer(device, cmd_buffer, required_size);
             return;
         }
 
@@ -98,17 +97,15 @@ public:
             return;
         }
 
-        void* mapped_data = gpu_buffer_->Map();
         if (cpu_data_.empty())
         {
-            std::memset(mapped_data, 0, sizeof(T));
+            UploadBytes(device, cmd_buffer, 0, nullptr, sizeof(T));
         }
         else if (dirty_count_ > 0)
         {
-            std::memcpy(static_cast<uint8_t*>(mapped_data) + static_cast<size_t>(dirty_offset_) * sizeof(T),
-                cpu_data_.data() + dirty_offset_, static_cast<size_t>(dirty_count_) * sizeof(T));
+            UploadBytes(device, cmd_buffer, static_cast<uint64_t>(dirty_offset_) * sizeof(T),
+                cpu_data_.data() + dirty_offset_, static_cast<uint64_t>(dirty_count_) * sizeof(T));
         }
-        gpu_buffer_->Unmap();
         ClearDirty();
     }
 
@@ -138,19 +135,49 @@ public:
     }
 
 private:
-    void UploadWholeBuffer()
+    void UploadWholeBuffer(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer, uint64_t required_size)
     {
-        void* mapped_data = gpu_buffer_->Map();
         if (cpu_data_.empty())
         {
-            std::memset(mapped_data, 0, sizeof(T));
+            UploadBytes(device, cmd_buffer, 0, nullptr, sizeof(T));
         }
         else
         {
-            std::memcpy(mapped_data, cpu_data_.data(), static_cast<size_t>(cpu_data_.size()) * sizeof(T));
+            UploadBytes(device, cmd_buffer, 0, cpu_data_.data(), required_size);
         }
-        gpu_buffer_->Unmap();
         ClearDirty();
+    }
+
+    void UploadBytes(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer, uint64_t dst_offset, T const* src_data,
+        uint64_t size_bytes)
+    {
+        EnsureStagingBuffer(device, size_bytes);
+
+        void* mapped_data = staging_buffer_->Map();
+        if (src_data)
+        {
+            std::memcpy(mapped_data, src_data, static_cast<size_t>(size_bytes));
+        }
+        else
+        {
+            std::memset(mapped_data, 0, static_cast<size_t>(size_bytes));
+        }
+        staging_buffer_->Unmap();
+        cmd_buffer.CopyBuffer(staging_buffer_, 0, gpu_buffer_, dst_offset, size_bytes);
+    }
+
+    void EnsureStagingBuffer(gpu::DevicePtr const& device, uint64_t required_size)
+    {
+        if (!staging_buffer_)
+        {
+            staging_buffer_ = device->CreateBuffer(required_size, sizeof(T), gpu::BufferFlags::kCpuAccess);
+            return;
+        }
+
+        if (staging_buffer_->GetSize() < required_size)
+        {
+            staging_buffer_->Resize(required_size);
+        }
     }
 
     void MarkDirty(uint32_t offset, uint32_t count)
@@ -184,6 +211,7 @@ private:
     gpu::BufferFlags flags_;
     std::vector<T> cpu_data_;
     gpu::BufferPtr gpu_buffer_;
+    gpu::BufferPtr staging_buffer_;
     bool dirty_ = false;
     uint32_t dirty_offset_ = 0;
     uint32_t dirty_count_ = 0;

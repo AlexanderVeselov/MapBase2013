@@ -3,6 +3,8 @@
 
 #include "dx9_interop.h"
 
+#include <cstring>
+
 namespace
 {
 std::string GetShaderDirectory(char const* source_file_path)
@@ -35,9 +37,9 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
         gpu::ImageFormat::kR32_Typeless, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kDepthStencil);
 
     resources.view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
+        gpu::BufferFlags::kConstant);
     resources.inverse_view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
-        gpu::BufferFlags::kCpuAccess | gpu::BufferFlags::kConstant);
+        gpu::BufferFlags::kConstant);
 }
 
 void EnsureRenderCommandBuffer(RenderBackendContext& context)
@@ -72,3 +74,25 @@ void SubmitRenderCommandsAndWait(RenderBackendContext& context)
     context.graphics_queue->WaitIdle();
 }
 
+void UploadBufferData(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer, gpu::BufferPtr& staging_buffer,
+    gpu::BufferPtr const& dst_buffer, void const* data, size_t data_size)
+{
+    if (!dst_buffer || !data || data_size == 0)
+    {
+        return;
+    }
+
+    if (!staging_buffer)
+    {
+        staging_buffer = device->CreateBuffer(data_size, 1, gpu::BufferFlags::kCpuAccess);
+    }
+    else if (staging_buffer->GetSize() < data_size)
+    {
+        staging_buffer->Resize(data_size);
+    }
+
+    void* mapped_data = staging_buffer->Map();
+    std::memcpy(mapped_data, data, data_size);
+    staging_buffer->Unmap();
+    cmd_buffer.CopyBuffer(staging_buffer, 0, dst_buffer, 0, data_size);
+}
