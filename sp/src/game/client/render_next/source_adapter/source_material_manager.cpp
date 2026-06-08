@@ -1,6 +1,8 @@
 #include "cbase.h"
 #include "source_material_manager.h"
 
+#include "../render_scene.h"
+
 #include "materialsystem/imaterial.h"
 #include "materialsystem/imaterialvar.h"
 #include "materialsystem/itexture.h"
@@ -86,20 +88,26 @@ bool ResolveSupportedAlbedoTextureName(char const* material_name, std::string& o
 }
 }
 
-void SourceMaterialManager::EnsureFallbackMaterial()
+void SourceMaterialManager::Reset()
 {
-    if (!materials_.empty())
+    material_ids_by_name_.clear();
+}
+
+void SourceMaterialManager::EnsureFallbackMaterial(RenderScene& scene)
+{
+    if (!scene.materials.Empty())
     {
         return;
     }
 
-    materials_.push_back(Material{0});
+    scene.materials.Append(Material{0});
 }
 
 uint32_t SourceMaterialManager::LoadMaterial(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager, char const* material_name)
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene& scene,
+    SourceTextureManager& texture_manager, char const* material_name)
 {
-    EnsureFallbackMaterial();
+    EnsureFallbackMaterial(scene);
 
     if (!material_name || material_name[0] == '\0')
     {
@@ -120,20 +128,7 @@ uint32_t SourceMaterialManager::LoadMaterial(gpu::DevicePtr const& device, gpu::
             texture_manager.LoadTexture(device, cmd_buffer, image_layouts, albedo_texture_name.c_str());
     }
 
-    uint32_t material_id = static_cast<uint32_t>(materials_.size());
-    materials_.push_back(material);
+    uint32_t material_id = scene.materials.Append(material).offset;
     material_ids_by_name_.emplace(material_name, material_id);
     return material_id;
-}
-
-Material const& SourceMaterialManager::GetMaterial(uint32_t material_id) const
-{
-    static Material fallback_material = {};
-
-    if (material_id >= materials_.size())
-    {
-        return materials_.empty() ? fallback_material : materials_[0];
-    }
-
-    return materials_[material_id];
 }

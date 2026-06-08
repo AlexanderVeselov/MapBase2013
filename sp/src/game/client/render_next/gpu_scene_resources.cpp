@@ -57,36 +57,13 @@ void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer&
 
 }
 
-std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene const& scene,
-    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
-{
-    std::vector<uint32_t> material_ids(scene.materials.size() + 1, 0);
-    for (size_t material_index = 0; material_index < scene.materials.size(); ++material_index)
-    {
-        material_ids[material_index + 1] = material_manager.LoadMaterial(
-            device, cmd_buffer, image_layouts, texture_manager, scene.materials[material_index].material_name.c_str());
-    }
-
-    return material_ids;
-}
-
-std::vector<Material> BuildUploadedMaterials(std::vector<uint32_t> const& material_ids,
-    SourceMaterialManager const& material_manager)
-{
-    std::vector<Material> upload_materials(material_ids.size());
-    for (size_t material_index = 0; material_index < material_ids.size(); ++material_index)
-    {
-        upload_materials[material_index] = material_manager.GetMaterial(material_ids[material_index]);
-    }
-
-    return upload_materials;
-}
-
 void SyncRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene& scene,
     SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
+    (void)texture_manager;
+    (void)material_manager;
+
     scene.EnsureFallbackTextures(device, cmd_buffer, image_layouts);
 
     if (!scene.lightmap_atlas.pixels.empty() && scene.lightmap_atlas.width > 0 && scene.lightmap_atlas.height > 0)
@@ -103,14 +80,14 @@ void SyncRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_
         scene.lightmap_texture = scene.fallback_lightmap_texture;
     }
 
-    scene.material_ids = BuildMaterialIds(device, cmd_buffer, image_layouts, scene, texture_manager, material_manager);
-    scene.gpu_materials.Clear();
-    scene.gpu_materials.Append(BuildUploadedMaterials(scene.material_ids, material_manager));
-
+    if (scene.materials.Empty())
+    {
+        scene.materials.Append(Material{});
+    }
     scene.transforms.Sync(device, cmd_buffer);
     scene.instances.Sync(device, cmd_buffer);
+    scene.materials.Sync(device, cmd_buffer);
     scene.vertex_colors.Sync(device, cmd_buffer);
-    scene.gpu_materials.Sync(device, cmd_buffer);
     scene.vertices.Sync(device, cmd_buffer);
     scene.indices.Sync(device, cmd_buffer);
 }

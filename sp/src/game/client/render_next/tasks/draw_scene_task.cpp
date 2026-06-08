@@ -48,7 +48,7 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, 
     descriptor_set_->BindBuffer(*scene.transforms.GpuBuffer(), 1);
     descriptor_set_->BindBuffer(*scene.instances.GpuBuffer(), 2);
     descriptor_set_->BindBuffer(*scene.vertex_colors.GpuBuffer(), 3);
-    descriptor_set_->BindBuffer(*scene.gpu_materials.GpuBuffer(), 4);
+    descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 4);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);

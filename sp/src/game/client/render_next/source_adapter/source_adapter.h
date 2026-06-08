@@ -17,7 +17,9 @@ public:
     char const* GetSkyName() const override;
     void GetSkyboxTextureNames(std::array<std::string, 6>& out_texture_names) const override;
 
-    void BuildWorldScene(char const* level_name, RenderScene& out_scene) override;
+    void BuildWorldScene(char const* level_name, RenderScene& out_scene, gpu::DevicePtr const& device,
+        gpu::CommandBuffer& cmd_buffer, std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts,
+        SourceTextureManager& texture_manager, SourceMaterialManager& material_manager) override;
     void UpdateRenderableEntities(RenderScene& scene) override;
 
 private:

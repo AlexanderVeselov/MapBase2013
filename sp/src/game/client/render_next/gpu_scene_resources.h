@@ -13,13 +13,6 @@
 #include <array>
 #include <unordered_map>
 
-std::vector<uint32_t> BuildMaterialIds(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene const& scene,
-    SourceTextureManager& texture_manager, SourceMaterialManager& material_manager);
-
-std::vector<Material> BuildUploadedMaterials(std::vector<uint32_t> const& material_ids,
-    SourceMaterialManager const& material_manager);
-
 void UploadSkyboxTexturesToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, std::array<std::string, 6> const& skybox_texture_names,
     SourceTextureManager& texture_manager, RenderScene& out_scene);

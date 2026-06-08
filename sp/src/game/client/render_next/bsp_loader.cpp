@@ -1,4 +1,5 @@
 #include "bsp_loader.h"
+#include "render_scene.h"
 #include "bspfile.h"
 #include "gamebspfile.h"
 
@@ -417,18 +418,25 @@ struct BspGeometryBuilder
     std::vector<PackedLightmapRect> const& face_lightmap_rects;
     std::vector<Vertex>& out_vertices;
     std::vector<uint32_t>& out_indices;
-    std::vector<RenderMaterial>& out_materials;
+    RenderScene& scene;
+    gpu::DevicePtr const& device;
+    gpu::CommandBuffer& cmd_buffer;
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts;
+    SourceTextureManager& texture_manager;
+    SourceMaterialManager& material_manager;
     LightmapAtlas const& lightmap_atlas;
     std::unordered_map<std::string, uint32_t> material_indices;
 
     uint32_t GetTextureIndex(std::string const& material_name, dtexdata_t const& face_texdata)
     {
+        (void)face_texdata;
+
         uint32_t texture_index = 0u;
         auto [it, inserted] = material_indices.emplace(material_name, 0u);
         if (inserted)
         {
-            out_materials.push_back(RenderMaterial{material_name, face_texdata.view_width, face_texdata.view_height});
-            texture_index = static_cast<uint32_t>(out_materials.size());
+            texture_index = material_manager.LoadMaterial(device, cmd_buffer, image_layouts, scene, texture_manager,
+                material_name.c_str());
             it->second = texture_index;
         }
         else
@@ -803,9 +811,10 @@ struct BspGeometryBuilder
     }
 };
 
-void LoadBsp(char const* filename, MirroredBuffer<Vertex>& out_vertices, MirroredBuffer<uint32_t>& out_indices,
-    std::vector<RenderMaterial>& out_materials, LightmapAtlas& out_lightmap_atlas, std::vector<MeshSourceRange>& out_world_mesh_ranges,
-    std::vector<BrushModelSourceRange>& out_brush_model_ranges)
+void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager, LightmapAtlas& out_lightmap_atlas,
+    std::vector<MeshSourceRange>& out_world_mesh_ranges, std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
     out_world_mesh_ranges.clear();
@@ -840,7 +849,12 @@ void LoadBsp(char const* filename, MirroredBuffer<Vertex>& out_vertices, Mirrore
         face_lightmap_rects,
         vertices,
         indices,
-        out_materials,
+        io_scene,
+        device,
+        cmd_buffer,
+        image_layouts,
+        texture_manager,
+        material_manager,
         out_lightmap_atlas,
         {}
     };
@@ -851,8 +865,8 @@ void LoadBsp(char const* filename, MirroredBuffer<Vertex>& out_vertices, Mirrore
         geometry_builder.BuildBrushModelGeometry(submodel_index, out_brush_model_ranges);
     }
 
-    out_vertices.Append(vertices);
-    out_indices.Append(indices);
+    io_scene.vertices.Append(vertices);
+    io_scene.indices.Append(indices);
 }
 
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props)

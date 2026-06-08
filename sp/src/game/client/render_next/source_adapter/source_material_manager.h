@@ -9,7 +9,8 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <vector>
+
+struct RenderScene;
 
 struct Material
 {
@@ -19,16 +20,15 @@ struct Material
 class SourceMaterialManager
 {
 public:
-    uint32_t LoadMaterial(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
-        char const* material_name);
+    void Reset();
 
-    Material const& GetMaterial(uint32_t material_id) const;
+    uint32_t LoadMaterial(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, RenderScene& scene,
+        SourceTextureManager& texture_manager, char const* material_name);
 
 private:
-    void EnsureFallbackMaterial();
+    void EnsureFallbackMaterial(RenderScene& scene);
 
 private:
     std::unordered_map<std::string, uint32_t> material_ids_by_name_;
-    std::vector<Material> materials_;
 };

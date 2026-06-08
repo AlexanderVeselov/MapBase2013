@@ -85,9 +85,7 @@ struct RenderScene
     MirroredBuffer<SceneTransform> transforms;
     MirroredBuffer<VertexColorData> vertex_colors;
     MirroredBuffer<RenderInstance> instances;
-    MirroredBuffer<Material> gpu_materials;
-    std::vector<RenderMaterial> materials;
-    std::vector<uint32_t> material_ids;
+    MirroredBuffer<Material> materials;
     LightmapAtlas lightmap_atlas;
     gpu::ImagePtr fallback_lightmap_texture;
     gpu::ImagePtr lightmap_texture;
@@ -100,9 +98,7 @@ struct RenderScene
         transforms.Clear();
         vertex_colors.Clear();
         instances.Clear();
-        gpu_materials.Clear();
-        materials.clear();
-        material_ids.clear();
+        materials.Clear();
         lightmap_atlas = {};
         lightmap_texture.reset();
         skybox_texture_ids.fill(0);

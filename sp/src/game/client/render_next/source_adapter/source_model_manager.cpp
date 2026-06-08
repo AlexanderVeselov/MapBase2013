@@ -35,8 +35,10 @@ void ComputeStaticPropVertexColor(Vertex const& source_vertex, matrix3x4_t const
     out_color[2] = lighting.z;
 }
 
-uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_indices,
-    std::vector<RenderMaterial>& materials_out, std::string const& material_name)
+uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_indices, std::string const& material_name,
+    RenderScene& scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager)
 {
     if (material_name.empty())
     {
@@ -49,8 +51,8 @@ uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_i
         return existing->second;
     }
 
-    materials_out.push_back(RenderMaterial{material_name, 1, 1});
-    uint32_t material_index = static_cast<uint32_t>(materials_out.size());
+    uint32_t material_index = material_manager.LoadMaterial(device, cmd_buffer, image_layouts, scene, texture_manager,
+        material_name.c_str());
     material_indices.emplace(material_name, material_index);
     return material_index;
 }
@@ -93,17 +95,11 @@ std::string BuildModelCacheKey(char const* model_name, int skin)
     return std::string(model_name ? model_name : "") + "#" + std::to_string(skin);
 }
 
-void InitializeSceneMaterialIndices(RenderScene const& scene, SourceModelSceneCache& io_scene_cache)
+void InitializeSceneMaterialIndices(SourceModelSceneCache& io_scene_cache)
 {
     if (io_scene_cache.is_initialized)
     {
         return;
-    }
-
-    io_scene_cache.material_indices.reserve(scene.materials.size());
-    for (size_t material_index = 0; material_index < scene.materials.size(); ++material_index)
-    {
-        io_scene_cache.material_indices.emplace(scene.materials[material_index].material_name, static_cast<uint32_t>(material_index + 1));
     }
 
     io_scene_cache.is_initialized = true;
@@ -132,7 +128,9 @@ bool AppendInstanceRanges(std::vector<SourceModelInstanceRange> const& mesh_rang
 }
 
 bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene, SourceModelSceneCache& io_scene_cache,
-    SourceModelInstanceData& out_instance_data)
+    gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager, SourceModelInstanceData& out_instance_data)
 {
     if (!model_name || model_name[0] == '\0' || !mdlcache || !g_pStudioRender)
     {
@@ -228,8 +226,9 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
             }
         }
 
-        uint32_t material_index = FindOrAddMaterial(io_scene_cache.material_indices, io_scene.materials,
-            material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "");
+        uint32_t material_index = FindOrAddMaterial(io_scene_cache.material_indices,
+            material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "", io_scene, device, cmd_buffer,
+            image_layouts, texture_manager, material_manager);
         if (!mesh_vertices.empty() && !mesh_indices.empty() && triangles_before_batch > 0)
         {
             ApplyFallbackLightmapUvs(mesh_vertices, io_scene);
@@ -250,7 +249,9 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
 }
 
 bool SourceModelManager::AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
-    SourceModelSceneCache* io_scene_cache)
+    gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager, SourceModelSceneCache* io_scene_cache)
 {
     SourceModelInstanceData const* existing_instance_data = nullptr;
     std::string model_key;
@@ -271,10 +272,11 @@ bool SourceModelManager::AppendModelByName(char const* model_name, int skin, mat
 
     SourceModelSceneCache local_scene_cache;
     SourceModelSceneCache& scene_cache = io_scene_cache ? *io_scene_cache : local_scene_cache;
-    InitializeSceneMaterialIndices(io_scene, scene_cache);
+    InitializeSceneMaterialIndices(scene_cache);
 
     SourceModelInstanceData instance_data = {};
-    if (!AppendLoadedModelGeometry(model_name, skin, io_scene, scene_cache, instance_data))
+    if (!AppendLoadedModelGeometry(model_name, skin, io_scene, scene_cache, device, cmd_buffer, image_layouts,
+            texture_manager, material_manager, instance_data))
     {
         return false;
     }
@@ -287,7 +289,10 @@ bool SourceModelManager::AppendModelByName(char const* model_name, int skin, mat
     return AppendInstanceRanges(instance_data.mesh_ranges, model_to_world, io_scene);
 }
 
-void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene)
+void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene,
+    gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+    SourceMaterialManager& material_manager)
 {
     if (!modelinfo || !mdlcache || !g_pStudioRender)
     {
@@ -309,7 +314,8 @@ void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement>
         AngleMatrix(placement.angles, placement.origin, model_to_world);
 
         size_t instance_count_before = io_scene.instances.Size();
-        if (!AppendModelByName(placement.model_name.c_str(), placement.skin, model_to_world, io_scene, &scene_cache))
+        if (!AppendModelByName(placement.model_name.c_str(), placement.skin, model_to_world, io_scene, device, cmd_buffer,
+            image_layouts, texture_manager, material_manager, &scene_cache))
         {
             continue;
         }

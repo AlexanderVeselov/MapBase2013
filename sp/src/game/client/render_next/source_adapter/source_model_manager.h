@@ -48,10 +48,17 @@ class SourceModelManager
 {
 public:
     bool AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
-        SourceModelSceneCache* io_scene_cache = nullptr);
-    void AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene);
+        gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+        SourceMaterialManager& material_manager, SourceModelSceneCache* io_scene_cache = nullptr);
+    void AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene,
+        gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+        SourceMaterialManager& material_manager);
 
 private:
     bool AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene, SourceModelSceneCache& io_scene_cache,
-        SourceModelInstanceData& out_instance_data);
+        gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
+        std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
+        SourceMaterialManager& material_manager, SourceModelInstanceData& out_instance_data);
 };

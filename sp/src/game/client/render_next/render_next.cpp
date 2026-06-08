@@ -91,7 +91,7 @@ void RenderImpl::Init()
     scene_.transforms.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
-    scene_.gpu_materials.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     sky_render_task_.Initialize(backend_.device, backend_resources_, scene_, texture_manager_);
     draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
@@ -143,7 +143,11 @@ void RenderImpl::ReloadPipelines()
 
 void RenderImpl::BuildScene(char const* level_name)
 {
-    engine_adapter_.BuildWorldScene(level_name, scene_);
+    EnsureRenderCommandBuffer(backend_);
+    scene_.materials.Clear();
+    material_manager_.Reset();
+    engine_adapter_.BuildWorldScene(level_name, scene_, backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
+        texture_manager_, material_manager_);
 }
 
 void RenderImpl::SyncSceneToGpu()
