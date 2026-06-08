@@ -19,16 +19,19 @@ struct InstanceData
     uint material_index;
     uint transform_index;
     uint vertex_color_offset;
+    uint ambient_cube_offset;
     uint bone_offset;
     uint bone_count;
     uint is_visible;
     uint padding;
+    uint padding1;
 };
 
 StructuredBuffer<InstanceData> g_scene_instances : register(t2);
 StructuredBuffer<float4> g_scene_vertex_colors : register(t3);
 
 StructuredBuffer<float4x4> g_scene_bones : register(t4);
+StructuredBuffer<float4> g_scene_ambient_cubes : register(t5);
 
 struct VSInput
 {
@@ -49,6 +52,22 @@ struct VSOutput
     uint material_index : TEXCOORD2;
     float3 color : TEXCOORD3;
 };
+
+float3 VertexShaderAmbientLight(const float3 worldNormal, uint ambient_cube_offset)
+{
+    float3 nSquared = worldNormal * worldNormal;
+    int3 isNegative = (worldNormal < 0.0f);
+    float3 ambientCube[6];
+    [unroll]
+    for (uint face_index = 0; face_index < 6; ++face_index)
+    {
+        ambientCube[face_index] = g_scene_ambient_cubes[ambient_cube_offset + face_index].rgb;
+    }
+
+    return nSquared.x * ambientCube[isNegative.x]
+        + nSquared.y * ambientCube[isNegative.y + 2]
+        + nSquared.z * ambientCube[isNegative.z + 4];
+}
 
 VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
 {
@@ -99,6 +118,10 @@ VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
     if (instance_data.vertex_color_offset != 0xFFFFFFFFu)
     {
         vertex_color = g_scene_vertex_colors[instance_data.vertex_color_offset + vertex_id].rgb;
+    }
+    else if (instance_data.ambient_cube_offset != 0xFFFFFFFFu)
+    {
+        vertex_color = VertexShaderAmbientLight(output.normal, instance_data.ambient_cube_offset);
     }
 
     output.color = vertex_color * instance_data.color.rgb;

@@ -141,6 +141,7 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderScene& out_sce
 
     build_cache_.static_transforms = out_scene.transforms.ToVector();
     build_cache_.static_vertex_colors = out_scene.vertex_colors.ToVector();
+    build_cache_.static_ambient_cubes = out_scene.ambient_cubes.ToVector();
     build_cache_.static_instances = out_scene.instances.ToVector();
 }
 

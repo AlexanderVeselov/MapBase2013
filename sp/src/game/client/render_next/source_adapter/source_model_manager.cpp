@@ -137,26 +137,34 @@ std::string BuildModelCacheKey(char const* model_name, int skin)
     return std::string(model_name ? model_name : "") + "#" + std::to_string(skin);
 }
 
-void ComputeInstanceColor(matrix3x4_t const& model_to_world, float out_color[4])
+uint32_t AppendAmbientCube(matrix3x4_t const& model_to_world, MirroredBuffer<AmbientCubeColorData>& out_ambient_cubes)
 {
     Vector world_position(model_to_world[0][3], model_to_world[1][3], model_to_world[2][3]);
-    Vector world_normal(0.0f, 0.0f, 1.0f);
-    VectorRotate(world_normal, model_to_world, world_normal);
-    if (world_normal.Dot(world_normal) > 0.0f)
-    {
-        world_normal.NormalizeInPlace();
-    }
-
     Vector lighting(1.0f, 1.0f, 1.0f);
+    Vector box_colors[6] = {
+        Vector(1.0f, 1.0f, 1.0f),
+        Vector(1.0f, 1.0f, 1.0f),
+        Vector(1.0f, 1.0f, 1.0f),
+        Vector(1.0f, 1.0f, 1.0f),
+        Vector(1.0f, 1.0f, 1.0f),
+        Vector(1.0f, 1.0f, 1.0f)};
     if (engine)
     {
-        engine->ComputeLighting(world_position, &world_normal, true, lighting);
+        engine->ComputeLighting(world_position, nullptr, true, lighting, box_colors);
     }
 
-    out_color[0] = lighting.x;
-    out_color[1] = lighting.y;
-    out_color[2] = lighting.z;
-    out_color[3] = 1.0f;
+    uint32_t ambient_cube_offset = out_ambient_cubes.Size();
+    for (Vector const& box_color : box_colors)
+    {
+        AmbientCubeColorData ambient_cube_color = {};
+        ambient_cube_color.color[0] = box_color.x;
+        ambient_cube_color.color[1] = box_color.y;
+        ambient_cube_color.color[2] = box_color.z;
+        ambient_cube_color.color[3] = 1.0f;
+        out_ambient_cubes.Append(ambient_cube_color);
+    }
+
+    return ambient_cube_offset;
 }
 
 bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, matrix3x4_t const& model_to_world,
@@ -180,11 +188,16 @@ bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, m
         {
             instance.vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, cached_instance.vertex_offset,
                 cached_instance.padding0, model_to_world, io_scene.vertex_colors);
+            instance.ambient_cube_offset = RenderInstance::kInvalidAmbientCubeOffset;
         }
         else
         {
             instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
-            ComputeInstanceColor(model_to_world, instance.color);
+            instance.ambient_cube_offset = AppendAmbientCube(model_to_world, io_scene.ambient_cubes);
+            instance.color[0] = 1.0f;
+            instance.color[1] = 1.0f;
+            instance.color[2] = 1.0f;
+            instance.color[3] = 1.0f;
         }
         io_scene.instances.Append(instance);
     }

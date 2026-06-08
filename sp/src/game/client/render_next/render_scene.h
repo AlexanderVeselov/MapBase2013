@@ -57,6 +57,7 @@ inline SceneTransform MakeSceneTransform(matrix3x4_t const& source_transform)
 struct RenderInstance
 {
     static constexpr uint32_t kInvalidVertexColorOffset = UINT32_MAX;
+    static constexpr uint32_t kInvalidAmbientCubeOffset = UINT32_MAX;
     static constexpr uint32_t kInvalidBoneOffset = UINT32_MAX;
     static constexpr uint32_t kVisible = 1;
     static constexpr uint32_t kHidden = 0;
@@ -68,17 +69,24 @@ struct RenderInstance
     uint32_t material_index = 0;
     uint32_t transform_index = 0;
     uint32_t vertex_color_offset = kInvalidVertexColorOffset;
+    uint32_t ambient_cube_offset = kInvalidAmbientCubeOffset;
     uint32_t bone_offset = kInvalidBoneOffset;
     uint32_t bone_count = 0;
     uint32_t is_visible = kVisible;
     uint32_t padding0 = 0;
+    uint32_t padding1 = 0;
 };
 
-static_assert(sizeof(RenderInstance) == 56, "RenderInstance must match HLSL InstanceData layout");
+static_assert(sizeof(RenderInstance) == 64, "RenderInstance must match HLSL InstanceData layout");
 
 struct VertexColorData
 {
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+};
+
+struct AmbientCubeColorData
+{
+    float color[4] = {};
 };
 
 struct SceneBoneMatrix
@@ -120,6 +128,7 @@ struct RenderScene
     MirroredBuffer<SceneTransform> transforms{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<SceneBoneMatrix> bones{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<VertexColorData> vertex_colors{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<AmbientCubeColorData> ambient_cubes{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<RenderInstance> instances{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<Material> materials{gpu::BufferFlags::kShaderResource};
     LightmapAtlas lightmap_atlas;
@@ -134,6 +143,7 @@ struct RenderScene
         transforms.Reset();
         bones.Reset();
         vertex_colors.Reset();
+        ambient_cubes.Reset();
         instances.Reset();
         materials.Reset();
         lightmap_atlas = {};

@@ -42,6 +42,8 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
     scene.bones.Clear();
     scene.vertex_colors.Clear();
     scene.vertex_colors.Append(build_cache.static_vertex_colors);
+    scene.ambient_cubes.Clear();
+    scene.ambient_cubes.Append(build_cache.static_ambient_cubes);
     scene.instances.Clear();
     scene.instances.Append(build_cache.static_instances);
 

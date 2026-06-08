@@ -17,7 +17,7 @@ struct MaterialData
 
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);
 Texture2D g_lightmap : register(t0, space3);
-StructuredBuffer<MaterialData> g_scene_materials : register(t5);
+StructuredBuffer<MaterialData> g_scene_materials : register(t6);
 SamplerState g_sampler : register(s0, space2);
 SamplerState g_lightmap_sampler : register(s1, space2);
 
