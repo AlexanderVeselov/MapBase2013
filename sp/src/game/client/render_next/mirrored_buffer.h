@@ -65,6 +65,13 @@ public:
         dirty_count_ = 0;
     }
 
+    void Reset()
+    {
+        cpu_data_.clear();
+        gpu_buffer_.reset();
+        ClearDirty();
+    }
+
     void Sync(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer)
     {
         (void)cmd_buffer;

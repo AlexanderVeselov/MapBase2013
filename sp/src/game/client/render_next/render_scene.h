@@ -93,13 +93,14 @@ struct RenderScene
 
     void Reset()
     {
-        vertices.Clear();
-        indices.Clear();
-        transforms.Clear();
-        vertex_colors.Clear();
-        instances.Clear();
-        materials.Clear();
+        vertices.Reset();
+        indices.Reset();
+        transforms.Reset();
+        vertex_colors.Reset();
+        instances.Reset();
+        materials.Reset();
         lightmap_atlas = {};
+        fallback_lightmap_texture.reset();
         lightmap_texture.reset();
         skybox_texture_ids.fill(0);
     }
@@ -107,4 +108,3 @@ struct RenderScene
     void EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts);
 };
-

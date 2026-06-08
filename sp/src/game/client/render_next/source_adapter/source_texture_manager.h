@@ -13,6 +13,8 @@
 class SourceTextureManager
 {
 public:
+    void Reset();
+
     uint32_t LoadTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, char const* texture_name);
 

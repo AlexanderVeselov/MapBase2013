@@ -135,6 +135,12 @@ bool LoadTextureRgba(char const* texture_name, std::vector<uint8_t>& out_pixels,
 }
 }
 
+void SourceTextureManager::Reset()
+{
+    texture_ids_by_name_.clear();
+    textures_.clear();
+}
+
 void SourceTextureManager::EnsureFallbackTexture(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts)
 {

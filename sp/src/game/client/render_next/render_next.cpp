@@ -146,8 +146,11 @@ void RenderImpl::ReloadPipelines()
 void RenderImpl::BuildScene(char const* level_name)
 {
     EnsureRenderCommandBuffer(backend_);
-    scene_.materials.Clear();
+    backend_.image_layouts.clear();
+    texture_manager_.Reset();
     material_manager_.Reset();
+    scene_.Reset();
+    bound_texture_count_ = 0;
     engine_adapter_.BuildWorldScene(level_name, scene_, backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
         texture_manager_, material_manager_);
 }
