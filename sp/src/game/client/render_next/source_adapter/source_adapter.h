@@ -4,7 +4,6 @@
 #include "source_model_manager.h"
 #include "source_renderable_entity_adapter.h"
 #include "source_scene_cache.h"
-#include "source_world_loader.h"
 
 #include <array>
 #include <string>
@@ -24,7 +23,6 @@ public:
 
 private:
     SourceRenderableEntityAdapter renderable_entity_adapter_;
-    SourceWorldLoader world_loader_;
     SourceModelManager model_manager_;
     SourceSceneBuildCache build_cache_;
 };

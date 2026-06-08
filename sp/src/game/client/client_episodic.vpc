@@ -151,8 +151,6 @@ $Project "Client (Episodic)"
 			$File "render_next\source_adapter\source_material_manager.h"
 			$File "render_next\source_adapter\source_model_manager.cpp"
 			$File "render_next\source_adapter\source_model_manager.h"
-			$File "render_next\source_adapter\source_world_loader.cpp"
-			$File "render_next\source_adapter\source_world_loader.h"
 			$Folder "Tasks"
 			{
 				$File "render_next\tasks\copy_depth_task.cpp"

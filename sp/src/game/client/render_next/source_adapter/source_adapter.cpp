@@ -132,26 +132,15 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderScene& out_sce
     SourceTextureManager& texture_manager, SourceMaterialManager& material_manager)
 {
     char const* resolved_level_name = (level_name && level_name[0]) ? level_name : GetLevelName();
-    world_loader_.BuildBaseScene(resolved_level_name, out_scene, build_cache_, device, cmd_buffer, image_layouts,
-        texture_manager, material_manager);
+    out_scene.Reset();
+    build_cache_ = {};
+    model_manager_.Reset();
+    out_scene.transforms.Append(MakeIdentitySceneTransform());
+    LoadBsp(resolved_level_name, out_scene, device, cmd_buffer, image_layouts, texture_manager, material_manager, model_manager_,
+        out_scene.lightmap_atlas, build_cache_.brush_model_ranges);
 
-    std::vector<StaticPropInstance> static_props;
-    LoadStaticProps(resolved_level_name, static_props);
-    if (!static_props.empty())
-    {
-        std::vector<SourceModelPlacement> model_placements;
-        model_placements.reserve(static_props.size());
-        for (StaticPropInstance const& static_prop : static_props)
-        {
-            model_placements.push_back({static_prop.model_name, static_prop.origin, static_prop.angles, static_prop.skin});
-        }
-
-        model_manager_.AppendModelPlacements(model_placements, out_scene, device, cmd_buffer, image_layouts,
-            texture_manager, material_manager);
-    }
-
-    build_cache_.base_transforms = out_scene.transforms.ToVector();
-    build_cache_.base_instances = out_scene.instances.ToVector();
+    build_cache_.static_transforms = out_scene.transforms.ToVector();
+    build_cache_.static_instances = out_scene.instances.ToVector();
 }
 
 void SourceAdapter::UpdateRenderableEntities(RenderScene& scene)

@@ -34,9 +34,9 @@ bool TryParseBrushSubmodelIndex(char const* model_name, int& out_submodel_index)
 void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene, SourceSceneBuildCache const& build_cache)
 {
     scene.transforms.Clear();
-    scene.transforms.Append(build_cache.base_transforms);
+    scene.transforms.Append(build_cache.static_transforms);
     scene.instances.Clear();
-    scene.instances.Append(build_cache.base_instances);
+    scene.instances.Append(build_cache.static_instances);
 
     if (build_cache.brush_model_ranges.empty() || !cl_entitylist || !modelinfo)
     {

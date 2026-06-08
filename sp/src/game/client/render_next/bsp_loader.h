@@ -15,6 +15,7 @@
 #include <vector>
 
 struct RenderScene;
+class SourceModelManager;
 
 struct Vertex
 {
@@ -65,6 +66,6 @@ struct BrushModelSourceRange
 
 void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
-    SourceMaterialManager& material_manager, LightmapAtlas& out_lightmap_atlas,
-    std::vector<MeshSourceRange>& out_world_mesh_ranges, std::vector<BrushModelSourceRange>& out_brush_model_ranges);
+    SourceMaterialManager& material_manager, SourceModelManager& model_manager, LightmapAtlas& out_lightmap_atlas,
+    std::vector<BrushModelSourceRange>& out_brush_model_ranges);
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props);

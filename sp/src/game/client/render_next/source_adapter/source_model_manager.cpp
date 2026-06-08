@@ -64,7 +64,7 @@ Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fa
     return vertex;
 }
 
-uint32_t AppendStaticPropVertexColors(std::vector<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count,
+uint32_t AppendStaticPropVertexColors(MirroredBuffer<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count,
     matrix3x4_t const& model_to_world, MirroredBuffer<VertexColorData>& out_vertex_colors)
 {
     uint32_t vertex_color_offset = out_vertex_colors.Size();
@@ -95,42 +95,43 @@ std::string BuildModelCacheKey(char const* model_name, int skin)
     return std::string(model_name ? model_name : "") + "#" + std::to_string(skin);
 }
 
-void InitializeSceneMaterialIndices(SourceModelSceneCache& io_scene_cache)
-{
-    if (io_scene_cache.is_initialized)
-    {
-        return;
-    }
-
-    io_scene_cache.is_initialized = true;
-}
-
-bool AppendInstanceRanges(std::vector<SourceModelInstanceRange> const& mesh_ranges, matrix3x4_t const& model_to_world,
+bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, matrix3x4_t const& model_to_world,
     RenderScene& io_scene)
 {
-    if (mesh_ranges.empty())
+    if (cached_instances.empty())
     {
         return false;
     }
 
     uint32_t transform_index = io_scene.transforms.Append(MakeSceneTransform(model_to_world)).offset;
 
-    for (SourceModelInstanceRange const& mesh_range : mesh_ranges)
+    for (RenderInstance const& cached_instance : cached_instances)
     {
-        uint32_t vertex_color_offset = AppendStaticPropVertexColors(mesh_range.vertices, 0, mesh_range.vertex_count,
+        uint32_t vertex_color_offset = AppendStaticPropVertexColors(io_scene.vertices, cached_instance.vertex_offset,
+            cached_instance.padding0,
             model_to_world, io_scene.vertex_colors);
-        AddRenderInstance(io_scene.instances, mesh_range.vertex_offset, mesh_range.index_offset, mesh_range.index_count,
-            mesh_range.material_index, transform_index, nullptr, vertex_color_offset, mesh_range.vertex_count);
+
+        RenderInstance instance = cached_instance;
+        instance.transform_index = transform_index;
+        instance.vertex_color_offset = vertex_color_offset;
+        instance.is_visible = RenderInstance::kVisible;
+        io_scene.instances.Append(instance);
     }
 
     return true;
 }
 }
 
-bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene, SourceModelSceneCache& io_scene_cache,
+void SourceModelManager::Reset()
+{
+    material_indices_.clear();
+    model_instances_by_key_.clear();
+}
+
+bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int skin, RenderScene& io_scene,
     gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
-    SourceMaterialManager& material_manager, SourceModelInstanceData& out_instance_data)
+    SourceMaterialManager& material_manager, std::vector<RenderInstance>& out_cached_instances)
 {
     if (!model_name || model_name[0] == '\0' || !mdlcache || !g_pStudioRender)
     {
@@ -184,8 +185,8 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
     GetTriangles_Output_t triangle_output;
     g_pStudioRender->GetTriangles(draw_info, bone_to_world, triangle_output);
 
-    out_instance_data.mesh_ranges.clear();
-    out_instance_data.mesh_ranges.reserve(triangle_output.m_MaterialBatches.Count());
+    out_cached_instances.clear();
+    out_cached_instances.reserve(triangle_output.m_MaterialBatches.Count());
     for (int batch_index = 0; batch_index < triangle_output.m_MaterialBatches.Count(); ++batch_index)
     {
         GetTriangles_MaterialBatch_t const& material_batch = triangle_output.m_MaterialBatches[batch_index];
@@ -226,7 +227,7 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
             }
         }
 
-        uint32_t material_index = FindOrAddMaterial(io_scene_cache.material_indices,
+        uint32_t material_index = FindOrAddMaterial(material_indices_,
             material_batch.m_pMaterial ? material_batch.m_pMaterial->GetName() : "", io_scene, device, cmd_buffer,
             image_layouts, texture_manager, material_manager);
         if (!mesh_vertices.empty() && !mesh_indices.empty() && triangles_before_batch > 0)
@@ -234,99 +235,43 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
             ApplyFallbackLightmapUvs(mesh_vertices, io_scene);
             MirroredBuffer<Vertex>::Slice vertex_slice = io_scene.vertices.Append(mesh_vertices);
             MirroredBuffer<uint32_t>::Slice index_slice = io_scene.indices.Append(mesh_indices);
-            out_instance_data.mesh_ranges.push_back({
-                vertex_slice.offset,
-                vertex_slice.count,
-                index_slice.offset,
-                index_slice.count,
-                material_index,
-                mesh_vertices});
+            RenderInstance instance = {};
+            instance.vertex_offset = vertex_slice.offset;
+            instance.index_offset = index_slice.offset;
+            instance.index_count = index_slice.count;
+            instance.material_index = material_index;
+            instance.transform_index = 0;
+            instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+            instance.is_visible = RenderInstance::kVisible;
+            instance.padding0 = vertex_slice.count;
+            out_cached_instances.push_back(instance);
         }
     }
 
     mdlcache->UnlockStudioHdr(mdl_handle);
-    return !out_instance_data.mesh_ranges.empty();
+    return !out_cached_instances.empty();
 }
 
-bool SourceModelManager::AppendModelByName(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
-    gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
-    std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
-    SourceMaterialManager& material_manager, SourceModelSceneCache* io_scene_cache)
-{
-    SourceModelInstanceData const* existing_instance_data = nullptr;
-    std::string model_key;
-    if (io_scene_cache)
-    {
-        model_key = BuildModelCacheKey(model_name, skin);
-        auto existing_instance = io_scene_cache->instance_data_by_key.find(model_key);
-        if (existing_instance != io_scene_cache->instance_data_by_key.end())
-        {
-            existing_instance_data = &existing_instance->second;
-        }
-    }
-
-    if (existing_instance_data)
-    {
-        return AppendInstanceRanges(existing_instance_data->mesh_ranges, model_to_world, io_scene);
-    }
-
-    SourceModelSceneCache local_scene_cache;
-    SourceModelSceneCache& scene_cache = io_scene_cache ? *io_scene_cache : local_scene_cache;
-    InitializeSceneMaterialIndices(scene_cache);
-
-    SourceModelInstanceData instance_data = {};
-    if (!AppendLoadedModelGeometry(model_name, skin, io_scene, scene_cache, device, cmd_buffer, image_layouts,
-            texture_manager, material_manager, instance_data))
-    {
-        return false;
-    }
-
-    if (io_scene_cache)
-    {
-        scene_cache.instance_data_by_key.emplace(model_key, instance_data);
-    }
-
-    return AppendInstanceRanges(instance_data.mesh_ranges, model_to_world, io_scene);
-}
-
-void SourceModelManager::AppendModelPlacements(std::vector<SourceModelPlacement> const& placements, RenderScene& io_scene,
+bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t const& model_to_world, RenderScene& io_scene,
     gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
     SourceMaterialManager& material_manager)
 {
-    if (!modelinfo || !mdlcache || !g_pStudioRender)
+    std::string model_key = BuildModelCacheKey(model_name, skin);
+    auto existing_instance = model_instances_by_key_.find(model_key);
+    if (existing_instance != model_instances_by_key_.end())
     {
-        return;
+        return AppendInstanceRanges(existing_instance->second, model_to_world, io_scene);
     }
 
-    if (placements.empty())
+    std::vector<RenderInstance> cached_instances;
+    if (!AppendLoadedModelGeometry(model_name, skin, io_scene, device, cmd_buffer, image_layouts,
+            texture_manager, material_manager, cached_instances))
     {
-        return;
+        return false;
     }
 
-    SourceModelSceneCache scene_cache;
-    int appended_prop_count = 0;
-    int appended_triangle_count = 0;
+    model_instances_by_key_.emplace(model_key, cached_instances);
 
-    for (SourceModelPlacement const& placement : placements)
-    {
-        matrix3x4_t model_to_world;
-        AngleMatrix(placement.angles, placement.origin, model_to_world);
-
-        size_t instance_count_before = io_scene.instances.Size();
-        if (!AppendModelByName(placement.model_name.c_str(), placement.skin, model_to_world, io_scene, device, cmd_buffer,
-            image_layouts, texture_manager, material_manager, &scene_cache))
-        {
-            continue;
-        }
-
-        ++appended_prop_count;
-        for (size_t instance_index = instance_count_before; instance_index < io_scene.instances.Size(); ++instance_index)
-        {
-            appended_triangle_count += static_cast<int>(io_scene.instances[instance_index].index_count / 3);
-        }
-    }
-
-    Msg("render_next: model placements=%d rendered=%d triangles=%d\n",
-        placements.size(), appended_prop_count, appended_triangle_count);
+    return AppendInstanceRanges(cached_instances, model_to_world, io_scene);
 }

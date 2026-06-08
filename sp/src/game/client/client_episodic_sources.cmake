@@ -18,7 +18,6 @@ set(CLIENT_RENDER_NEW_SOURCES
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_adapter/source_renderable_entity_adapter.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_adapter/source_model_manager.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/source_adapter/source_texture_manager.cpp"
-    "${SOURCE_SDK_ROOT}/game/client/render_next/source_adapter/source_world_loader.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/render_graph.cpp"
     "${SOURCE_SDK_ROOT}/game/client/render_next/tasks/sky_render_task.cpp"
 )

@@ -1,5 +1,7 @@
 #include "bsp_loader.h"
 #include "render_scene.h"
+#include "source_adapter/source_model_manager.h"
+#include "source_adapter/source_scene_utils.h"
 #include "bspfile.h"
 #include "gamebspfile.h"
 
@@ -794,11 +796,11 @@ struct BspGeometryBuilder
         }
     }
 
-    void BuildWorldGeometry(std::vector<MeshSourceRange>& out_world_mesh_ranges)
+    void BuildWorldGeometry()
     {
         BuildModelGeometry(bsp.models[0], [&](uint32_t first_vertex, uint32_t first_index, uint32_t index_count, uint32_t material_index)
         {
-            out_world_mesh_ranges.push_back({first_vertex, first_index, index_count, material_index});
+            AddRenderInstance(scene.instances, first_vertex, first_index, index_count, material_index, 0);
         });
     }
 
@@ -813,11 +815,10 @@ struct BspGeometryBuilder
 
 void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
-    SourceMaterialManager& material_manager, LightmapAtlas& out_lightmap_atlas,
-    std::vector<MeshSourceRange>& out_world_mesh_ranges, std::vector<BrushModelSourceRange>& out_brush_model_ranges)
+    SourceMaterialManager& material_manager, SourceModelManager& model_manager, LightmapAtlas& out_lightmap_atlas,
+    std::vector<BrushModelSourceRange>& out_brush_model_ranges)
 {
     std::ifstream f("sourcetest/" + std::string(filename), std::ios::binary);
-    out_world_mesh_ranges.clear();
     out_brush_model_ranges.clear();
     InitializeFallbackLightmapAtlas(out_lightmap_atlas);
 
@@ -859,7 +860,7 @@ void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& 
         {}
     };
 
-    geometry_builder.BuildWorldGeometry(out_world_mesh_ranges);
+    geometry_builder.BuildWorldGeometry();
     for (int submodel_index = 1; submodel_index < static_cast<int>(bsp.models.size()); ++submodel_index)
     {
         geometry_builder.BuildBrushModelGeometry(submodel_index, out_brush_model_ranges);
@@ -867,6 +868,17 @@ void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& 
 
     io_scene.vertices.Append(vertices);
     io_scene.indices.Append(indices);
+
+    std::vector<StaticPropInstance> static_props;
+    LoadStaticProps(filename, static_props);
+
+    for (StaticPropInstance const& static_prop : static_props)
+    {
+        matrix3x4_t model_to_world;
+        AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
+        model_manager.LoadModel(static_prop.model_name.c_str(), static_prop.skin, model_to_world, io_scene, device, cmd_buffer,
+            image_layouts, texture_manager, material_manager);
+    }
 }
 
 void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_static_props)
@@ -1073,4 +1085,3 @@ void LoadStaticProps(char const* filename, std::vector<StaticPropInstance>& out_
         }
     }
 }
-

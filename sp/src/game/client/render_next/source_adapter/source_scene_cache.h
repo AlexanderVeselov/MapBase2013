@@ -6,7 +6,7 @@
 
 struct SourceSceneBuildCache
 {
-    std::vector<SceneTransform> base_transforms;
-    std::vector<RenderInstance> base_instances;
+    std::vector<SceneTransform> static_transforms;
+    std::vector<RenderInstance> static_instances;
     std::vector<BrushModelSourceRange> brush_model_ranges;
 };
