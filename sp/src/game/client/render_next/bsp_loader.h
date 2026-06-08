@@ -23,6 +23,8 @@ struct Vertex
     Vector normal;
     float uv[2];
     float lightmap_uv[2];
+    float bone_weights[4] = {};
+    uint32_t bone_indices[4] = {};
 };
 
 struct MeshSourceRange

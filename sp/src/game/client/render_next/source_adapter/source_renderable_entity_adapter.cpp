@@ -1,6 +1,7 @@
 #include "cbase.h"
 #include "source_renderable_entity_adapter.h"
 
+#include "c_baseanimating.h"
 #include "cliententitylist.h"
 #include "engine/ivmodelinfo.h"
 #include "icliententity.h"
@@ -38,6 +39,7 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
 {
     scene.transforms.Clear();
     scene.transforms.Append(build_cache.static_transforms);
+    scene.bones.Clear();
     scene.vertex_colors.Clear();
     scene.vertex_colors.Append(build_cache.static_vertex_colors);
     scene.instances.Clear();
@@ -96,7 +98,32 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
 
             matrix3x4_t model_to_world;
             AngleMatrix(entity->GetAbsAngles(), entity->GetAbsOrigin(), model_to_world);
-            if (!model_manager.LoadModel(model_name, renderable->GetSkin(), model_to_world, false, scene, device, cmd_buffer,
+            uint32_t bone_offset = RenderInstance::kInvalidBoneOffset;
+            uint32_t bone_count = 0;
+            IClientUnknown* client_unknown = renderable->GetIClientUnknown();
+            C_BaseEntity* base_entity = client_unknown ? client_unknown->GetBaseEntity() : nullptr;
+            if (base_entity)
+            {
+                if (C_BaseAnimating* base_animating = base_entity->GetBaseAnimating())
+                {
+                    CStudioHdr* studio_hdr = base_animating->GetModelPtr();
+                    if (studio_hdr)
+                    {
+                        matrix3x4_t bone_to_world[MAXSTUDIOBONES];
+                        if (base_animating->SetupBones(bone_to_world, MAXSTUDIOBONES, BONE_USED_BY_ANYTHING, gpGlobals->curtime))
+                        {
+                            bone_count = static_cast<uint32_t>((std::min)(studio_hdr->numbones(), static_cast<int>(MAXSTUDIOBONES)));
+                            bone_offset = scene.bones.Size();
+                            for (uint32_t bone_index = 0; bone_index < bone_count; ++bone_index)
+                            {
+                                scene.bones.Append(MakeSceneBoneMatrix(bone_to_world[bone_index]));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!model_manager.LoadModel(model_name, renderable->GetSkin(), model_to_world, false, scene, bone_offset, bone_count, device, cmd_buffer,
                     image_layouts, texture_manager, material_manager))
             {
                 continue;

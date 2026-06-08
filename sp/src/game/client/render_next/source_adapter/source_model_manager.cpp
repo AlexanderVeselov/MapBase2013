@@ -60,8 +60,13 @@ uint32_t FindOrAddMaterial(std::unordered_map<std::string, uint32_t>& material_i
 
 Vertex MakeStaticPropVertex(GetTriangles_Vertex_t const& source_vertex, float fallback_lightmap_u, float fallback_lightmap_v)
 {
-    Vertex vertex = {source_vertex.m_Position, source_vertex.m_Normal, {source_vertex.m_TexCoord.x, source_vertex.m_TexCoord.y},
-        {fallback_lightmap_u, fallback_lightmap_v}};
+    Vertex vertex = {};
+    vertex.pos = source_vertex.m_Position;
+    vertex.normal = source_vertex.m_Normal;
+    vertex.uv[0] = source_vertex.m_TexCoord.x;
+    vertex.uv[1] = source_vertex.m_TexCoord.y;
+    vertex.lightmap_uv[0] = fallback_lightmap_u;
+    vertex.lightmap_uv[1] = fallback_lightmap_v;
     return vertex;
 }
 
@@ -76,6 +81,29 @@ Vertex MakeStudioMeshVertex(Vector const& position, Vector const& normal, Vector
     vertex.lightmap_uv[0] = fallback_lightmap_u;
     vertex.lightmap_uv[1] = fallback_lightmap_v;
     return vertex;
+}
+
+void FillStudioBoneData(mstudioboneweight_t const& bone_weights, Vertex& out_vertex)
+{
+    float weight_sum = 0.0f;
+    int num_bones = (std::max)(0, (std::min)(static_cast<int>(bone_weights.numbones), 4));
+    for (int bone_index = 0; bone_index < num_bones; ++bone_index)
+    {
+        out_vertex.bone_indices[bone_index] = static_cast<uint32_t>(bone_weights.bone[bone_index]);
+        out_vertex.bone_weights[bone_index] = bone_weights.weight[bone_index];
+        weight_sum += bone_weights.weight[bone_index];
+    }
+
+    if (num_bones == 1 && weight_sum == 0.0f)
+    {
+        out_vertex.bone_weights[0] = 1.0f;
+        return;
+    }
+
+    if (num_bones > 0 && weight_sum < 1.0f)
+    {
+        out_vertex.bone_weights[num_bones - 1] += 1.0f - weight_sum;
+    }
 }
 
 uint32_t AppendStaticPropVertexColors(MirroredBuffer<Vertex> const& vertices, uint32_t first_vertex, uint32_t vertex_count,
@@ -132,7 +160,7 @@ void ComputeInstanceColor(matrix3x4_t const& model_to_world, float out_color[4])
 }
 
 bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, matrix3x4_t const& model_to_world,
-    bool use_per_vertex_lighting, RenderScene& io_scene)
+    bool use_per_vertex_lighting, uint32_t bone_offset, uint32_t bone_count, RenderScene& io_scene)
 {
     if (cached_instances.empty())
     {
@@ -145,6 +173,8 @@ bool AppendInstanceRanges(std::vector<RenderInstance> const& cached_instances, m
     {
         RenderInstance instance = cached_instance;
         instance.transform_index = transform_index;
+        instance.bone_offset = bone_offset;
+        instance.bone_count = bone_count;
         instance.is_visible = RenderInstance::kVisible;
         if (use_per_vertex_lighting)
         {
@@ -334,8 +364,11 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
                             Vector const& position = *mesh_vertex_data->Position(mesh_vertex_index);
                             Vector const& normal = *mesh_vertex_data->Normal(mesh_vertex_index);
                             Vector2D const& texcoord = *mesh_vertex_data->Texcoord(mesh_vertex_index);
-                            mesh_vertices.push_back(MakeStudioMeshVertex(position, normal, texcoord,
-                                fallback_lightmap_u, fallback_lightmap_v));
+                            mstudioboneweight_t const& bone_weights = *mesh_vertex_data->BoneWeights(mesh_vertex_index);
+                            Vertex vertex = MakeStudioMeshVertex(position, normal, texcoord,
+                                fallback_lightmap_u, fallback_lightmap_v);
+                            FillStudioBoneData(bone_weights, vertex);
+                            mesh_vertices.push_back(vertex);
                             strip_vertices.push_back(static_cast<uint32_t>(mesh_vertices.size() - 1));
                         }
 
@@ -360,6 +393,8 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
                 instance.material_index = material_index;
                 instance.transform_index = 0;
                 instance.vertex_color_offset = RenderInstance::kInvalidVertexColorOffset;
+                instance.bone_offset = RenderInstance::kInvalidBoneOffset;
+                instance.bone_count = 0;
                 instance.is_visible = RenderInstance::kVisible;
                 instance.padding0 = vertex_slice.count;
                 out_cached_instances.push_back(instance);
@@ -372,7 +407,7 @@ bool SourceModelManager::AppendLoadedModelGeometry(char const* model_name, int s
 }
 
 bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t const& model_to_world,
-    bool use_per_vertex_lighting, RenderScene& io_scene,
+    bool use_per_vertex_lighting, RenderScene& io_scene, uint32_t bone_offset, uint32_t bone_count,
     gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
     std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
     SourceMaterialManager& material_manager)
@@ -381,7 +416,8 @@ bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t
     auto existing_instance = model_instances_by_key_.find(model_key);
     if (existing_instance != model_instances_by_key_.end())
     {
-        return AppendInstanceRanges(existing_instance->second, model_to_world, use_per_vertex_lighting, io_scene);
+        return AppendInstanceRanges(existing_instance->second, model_to_world, use_per_vertex_lighting,
+            bone_offset, bone_count, io_scene);
     }
 
     std::vector<RenderInstance> cached_instances;
@@ -393,5 +429,6 @@ bool SourceModelManager::LoadModel(char const* model_name, int skin, matrix3x4_t
 
     model_instances_by_key_.emplace(model_key, cached_instances);
 
-    return AppendInstanceRanges(cached_instances, model_to_world, use_per_vertex_lighting, io_scene);
+    return AppendInstanceRanges(cached_instances, model_to_world, use_per_vertex_lighting,
+        bone_offset, bone_count, io_scene);
 }

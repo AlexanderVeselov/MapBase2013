@@ -90,6 +90,7 @@ void RenderImpl::Init()
     scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
     scene_.transforms.Append(MakeIdentitySceneTransform());
     scene_.transforms.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.bones.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
@@ -224,6 +225,7 @@ void RenderImpl::UpdateRenderableEntities()
     engine_adapter_.UpdateRenderableEntities(scene_, backend_.device, *backend_.cmd_buffer,
         backend_.image_layouts, texture_manager_, material_manager_);
     scene_.transforms.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.bones.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);

@@ -13,6 +13,7 @@ public:
     void Reset();
 
     bool LoadModel(char const* model_name, int skin, matrix3x4_t const& model_to_world, bool use_per_vertex_lighting, RenderScene& io_scene,
+        uint32_t bone_offset, uint32_t bone_count,
         gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
         std::unordered_map<gpu::Image*, gpu::ImageLayout>& image_layouts, SourceTextureManager& texture_manager,
         SourceMaterialManager& material_manager);

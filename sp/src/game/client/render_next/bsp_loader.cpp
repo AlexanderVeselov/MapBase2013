@@ -876,7 +876,8 @@ void LoadBsp(char const* filename, RenderScene& io_scene, gpu::DevicePtr const& 
     {
         matrix3x4_t model_to_world;
         AngleMatrix(static_prop.angles, static_prop.origin, model_to_world);
-        model_manager.LoadModel(static_prop.model_name.c_str(), static_prop.skin, model_to_world, true, io_scene, device, cmd_buffer,
+        model_manager.LoadModel(static_prop.model_name.c_str(), static_prop.skin, model_to_world, true, io_scene,
+            RenderInstance::kInvalidBoneOffset, 0, device, cmd_buffer,
             image_layouts, texture_manager, material_manager);
     }
 }

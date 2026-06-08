@@ -85,6 +85,7 @@ void SyncRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_
         scene.materials.Append(Material{});
     }
     scene.transforms.Sync(device, cmd_buffer);
+    scene.bones.Sync(device, cmd_buffer);
     scene.instances.Sync(device, cmd_buffer);
     scene.materials.Sync(device, cmd_buffer);
     scene.vertex_colors.Sync(device, cmd_buffer);

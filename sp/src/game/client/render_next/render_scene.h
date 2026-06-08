@@ -57,6 +57,7 @@ inline SceneTransform MakeSceneTransform(matrix3x4_t const& source_transform)
 struct RenderInstance
 {
     static constexpr uint32_t kInvalidVertexColorOffset = UINT32_MAX;
+    static constexpr uint32_t kInvalidBoneOffset = UINT32_MAX;
     static constexpr uint32_t kVisible = 1;
     static constexpr uint32_t kHidden = 0;
 
@@ -67,22 +68,43 @@ struct RenderInstance
     uint32_t material_index = 0;
     uint32_t transform_index = 0;
     uint32_t vertex_color_offset = kInvalidVertexColorOffset;
+    uint32_t bone_offset = kInvalidBoneOffset;
+    uint32_t bone_count = 0;
     uint32_t is_visible = kVisible;
     uint32_t padding0 = 0;
 };
 
-static_assert(sizeof(RenderInstance) == 48, "RenderInstance must match HLSL InstanceData layout");
+static_assert(sizeof(RenderInstance) == 56, "RenderInstance must match HLSL InstanceData layout");
 
 struct VertexColorData
 {
     float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 };
 
+struct SceneBoneMatrix
+{
+    float m[3][4] = {};
+};
+
+inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
+{
+    SceneBoneMatrix bone_matrix = {};
+    for (int row = 0; row < 3; ++row)
+    {
+        for (int column = 0; column < 4; ++column)
+        {
+            bone_matrix.m[row][column] = source_transform[row][column];
+        }
+    }
+    return bone_matrix;
+}
+
 struct RenderScene
 {
     MirroredBuffer<Vertex> vertices{gpu::BufferFlags::kCpuAccess};
     MirroredBuffer<uint32_t> indices{gpu::BufferFlags::kCpuAccess};
     MirroredBuffer<SceneTransform> transforms;
+    MirroredBuffer<SceneBoneMatrix> bones;
     MirroredBuffer<VertexColorData> vertex_colors;
     MirroredBuffer<RenderInstance> instances;
     MirroredBuffer<Material> materials;
@@ -96,6 +118,7 @@ struct RenderScene
         vertices.Reset();
         indices.Reset();
         transforms.Reset();
+        bones.Reset();
         vertex_colors.Reset();
         instances.Reset();
         materials.Reset();
