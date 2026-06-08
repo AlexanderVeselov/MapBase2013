@@ -10,8 +10,8 @@
 class DrawSceneTask final : public RenderTask
 {
 public:
-    void Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& view_proj_buffer, RenderScene const& scene);
-    void UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderScene const& scene, SourceTextureManager const& texture_manager);
+    void Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer, RenderScene const& scene);
+    void UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, RenderScene const& scene, SourceTextureManager const& texture_manager);
     char const* GetName() const override;
     void Execute(RenderTaskContext& context) override;
 
@@ -21,4 +21,3 @@ private:
     gpu::SamplerPtr texture_sampler_;
     gpu::SamplerPtr lightmap_sampler_;
 };
-

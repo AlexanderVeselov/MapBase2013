@@ -29,10 +29,11 @@ struct RenderBackendContext
 struct RenderBackendResources
 {
     gpu::ImagePtr color_texture;
+    gpu::ImagePtr velocity_texture;
     gpu::ImagePtr depth_texture;
     gpu::ImagePtr shared_depth_texture;
-    gpu::BufferPtr view_proj_buffer;
-    gpu::BufferPtr view_proj_staging_buffer;
+    gpu::BufferPtr camera_buffer;
+    gpu::BufferPtr camera_staging_buffer;
     gpu::BufferPtr inverse_view_proj_buffer;
     gpu::BufferPtr inverse_view_proj_staging_buffer;
 };

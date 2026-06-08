@@ -1,6 +1,7 @@
 cbuffer CameraCB : register(b0)
 {
     float4x4 g_view_projection;
+    float4x4 g_prev_view_projection;
 };
 
 cbuffer g_RootConstants : register(b1)
@@ -32,6 +33,7 @@ StructuredBuffer<float4> g_scene_vertex_colors : register(t3);
 
 StructuredBuffer<float4x4> g_scene_bones : register(t4);
 StructuredBuffer<float4> g_scene_ambient_cubes : register(t5);
+StructuredBuffer<float4x4> g_scene_prev_transforms : register(t6);
 
 struct VSInput
 {
@@ -51,6 +53,8 @@ struct VSOutput
     float2 lightmap_texcoord : TEXCOORD1;
     uint material_index : TEXCOORD2;
     float3 color : TEXCOORD3;
+    float4 curr_clip_position : TEXCOORD4;
+    float4 prev_clip_position : TEXCOORD5;
 };
 
 float3 VertexShaderAmbientLight(const float3 worldNormal, uint ambient_cube_offset)
@@ -76,6 +80,7 @@ VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
 
     float3 world_position_xyz;
     float3 world_normal;
+    bool has_skinned_motion = instance_data.bone_count > 0 && instance_data.bone_offset != 0xFFFFFFFFu;
     if (instance_data.bone_count > 0 && instance_data.bone_offset != 0xFFFFFFFFu)
     {
         world_position_xyz = float3(0.0f, 0.0f, 0.0f);
@@ -109,11 +114,24 @@ VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
     }
 
     float4 world_position = float4(world_position_xyz, 1.0f);
-    output.position = mul(world_position, g_view_projection);
+    output.curr_clip_position = mul(world_position, g_view_projection);
+    output.position = output.curr_clip_position;
     output.normal = normalize(world_normal);
     output.texcoord = input.texcoord;
     output.lightmap_texcoord = input.lightmap_texcoord;
     output.material_index = instance_data.material_index;
+
+    if (has_skinned_motion)
+    {
+        output.prev_clip_position = output.curr_clip_position;
+    }
+    else
+    {
+        float4x4 prev_model = g_scene_prev_transforms[instance_data.transform_index];
+        float4 prev_world_position = mul(float4(input.position, 1.0f), prev_model);
+        output.prev_clip_position = mul(prev_world_position, g_prev_view_projection);
+    }
+
     float3 vertex_color = float3(1.0f, 1.0f, 1.0f);
     if (instance_data.vertex_color_offset != 0xFFFFFFFFu)
     {

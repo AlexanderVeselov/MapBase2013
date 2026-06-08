@@ -28,6 +28,7 @@ public:
     void ReloadPipelines() override;
 
 private:
+    void SnapshotCurrentTransformsAsPrevious();
     void BuildScene(char const* level_name);
     void SyncSceneToGpu();
     void UploadSkyboxTextures();
@@ -50,6 +51,9 @@ private:
     uint32_t bound_texture_count_ = 0;
     uint32_t viewport_width_ = 0;
     uint32_t viewport_height_ = 0;
+    VMatrix previous_view_projection_matrix_ = {};
+    VMatrix current_view_projection_matrix_ = {};
+    bool has_previous_view_projection_ = false;
 };
 
 void ComputeViewMatrix(VMatrix* pViewMatrix, const Vector& origin, const QAngle& angles)
@@ -89,17 +93,18 @@ void RenderImpl::Init()
     scene_.EnsureFallbackTextures(backend_.device, *backend_.cmd_buffer, backend_.image_layouts);
     scene_.transforms.Append(MakeIdentitySceneTransform());
     scene_.transforms.Sync(backend_.device, *backend_.cmd_buffer);
+    SnapshotCurrentTransformsAsPrevious();
     scene_.bones.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.ambient_cubes.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     sky_render_task_.Initialize(backend_.device, backend_resources_, scene_, texture_manager_);
-    draw_scene_task_.Initialize(backend_.device, backend_resources_.view_proj_buffer, scene_);
+    draw_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
     UploadSkyboxTextures();
     SubmitRenderCommandsAndWait(backend_);
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     render_graph_.Reset();
@@ -132,7 +137,7 @@ void RenderImpl::ReloadPipelines()
     }
 
     gpu::PipelineReloadResult result = backend_.device->ReloadPipelines();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
 
     if (result.success)
     {
@@ -142,6 +147,29 @@ void RenderImpl::ReloadPipelines()
     {
         Warning("reloadpipelines: reloaded %u pipeline(s) with errors:\n%s\n", result.reloaded_count, result.error.c_str());
     }
+}
+
+void RenderImpl::SnapshotCurrentTransformsAsPrevious()
+{
+    gpu::BufferPtr const& current_transforms = scene_.transforms.GpuBuffer();
+    if (!current_transforms)
+    {
+        scene_.prev_transforms.reset();
+        return;
+    }
+
+    uint64_t required_size = current_transforms->GetSize();
+    if (!scene_.prev_transforms)
+    {
+        scene_.prev_transforms = backend_.device->CreateBuffer(required_size, sizeof(SceneTransform),
+            gpu::BufferFlags::kShaderResource);
+    }
+    else if (scene_.prev_transforms->GetSize() < required_size)
+    {
+        scene_.prev_transforms->Resize(required_size);
+    }
+
+    backend_.cmd_buffer->CopyBuffer(current_transforms, 0, scene_.prev_transforms, 0, required_size);
 }
 
 void RenderImpl::BuildScene(char const* level_name)
@@ -154,6 +182,7 @@ void RenderImpl::BuildScene(char const* level_name)
     bound_texture_count_ = 0;
     engine_adapter_.BuildWorldScene(level_name, scene_, backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
         texture_manager_, material_manager_);
+    has_previous_view_projection_ = false;
 }
 
 void RenderImpl::SyncSceneToGpu()
@@ -161,8 +190,9 @@ void RenderImpl::SyncSceneToGpu()
     EnsureRenderCommandBuffer(backend_);
     SyncRenderSceneToGpu(backend_.device, *backend_.cmd_buffer, backend_.image_layouts,
         scene_, texture_manager_, material_manager_);
+    SnapshotCurrentTransformsAsPrevious();
     UploadSkyboxTextures();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
+    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     SubmitRenderCommandsAndWait(backend_);
@@ -177,6 +207,12 @@ void RenderImpl::UploadSkyboxTextures()
 
 void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 {
+    struct CameraFrameData
+    {
+        VMatrix current_view_projection;
+        VMatrix previous_view_projection;
+    };
+
     viewport_width_ = backend_resources_.color_texture->GetWidth();
     viewport_height_ = backend_resources_.color_texture->GetHeight();
     EnsureRenderCommandBuffer(backend_);
@@ -190,9 +226,16 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
     MatrixInverseGeneral(view_projection_matrix, inverse_view_projection_matrix);
     MatrixTranspose(view_projection_matrix, view_projection_matrix);
     MatrixTranspose(inverse_view_projection_matrix, inverse_view_projection_matrix);
+    current_view_projection_matrix_ = view_projection_matrix;
 
-    UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.view_proj_staging_buffer,
-        backend_resources_.view_proj_buffer, view_projection_matrix.Base(), sizeof(VMatrix));
+    CameraFrameData camera_frame_data = {};
+    camera_frame_data.current_view_projection = current_view_projection_matrix_;
+    camera_frame_data.previous_view_projection = has_previous_view_projection_
+        ? previous_view_projection_matrix_
+        : current_view_projection_matrix_;
+
+    UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.camera_staging_buffer,
+        backend_resources_.camera_buffer, &camera_frame_data, sizeof(camera_frame_data));
     UploadBufferData(backend_.device, *backend_.cmd_buffer, backend_resources_.inverse_view_proj_staging_buffer,
         backend_resources_.inverse_view_proj_buffer, inverse_view_projection_matrix.Base(), sizeof(VMatrix));
 
@@ -207,7 +250,10 @@ void RenderImpl::DrawScene()
 
 void RenderImpl::FinalizeFrame()
 {
+    SnapshotCurrentTransformsAsPrevious();
     SubmitRenderCommandsAndWait(backend_);
+    previous_view_projection_matrix_ = current_view_projection_matrix_;
+    has_previous_view_projection_ = true;
     DX9_RenderFrame();
 }
 
@@ -233,7 +279,7 @@ void RenderImpl::UpdateRenderableEntities()
     uint32_t texture_count_after_update = texture_manager_.GetTextureCount();
     if (texture_count_after_update != texture_count_before_update || texture_count_after_update != bound_texture_count_)
     {
-        draw_scene_task_.UpdateSceneBindings(backend_resources_.view_proj_buffer, scene_, texture_manager_);
+        draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
         sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
         bound_texture_count_ = texture_count_after_update;
     }

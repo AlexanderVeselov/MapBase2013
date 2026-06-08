@@ -126,6 +126,7 @@ struct RenderScene
     MirroredBuffer<Vertex> vertices;
     MirroredBuffer<uint32_t> indices;
     MirroredBuffer<SceneTransform> transforms{gpu::BufferFlags::kShaderResource};
+    gpu::BufferPtr prev_transforms;
     MirroredBuffer<SceneBoneMatrix> bones{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<VertexColorData> vertex_colors{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<AmbientCubeColorData> ambient_cubes{gpu::BufferFlags::kShaderResource};
@@ -141,6 +142,7 @@ struct RenderScene
         vertices.Reset();
         indices.Reset();
         transforms.Reset();
+        prev_transforms.reset();
         bones.Reset();
         vertex_colors.Reset();
         ambient_cubes.Reset();

@@ -6,16 +6,16 @@ namespace
 constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
-void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& view_proj_buffer,
+void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer,
     RenderScene const& scene)
 {
-    (void)view_proj_buffer;
+    (void)camera_buffer;
     (void)scene;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
     pipeline_desc.vs_filename = "render_scene.vs";
     pipeline_desc.ps_filename = "render_scene.ps";
-    pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm};
+    pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm, gpu::ImageFormat::kRG16_Float};
     pipeline_desc.depth_enabled = true;
     pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
     pipeline_ = device->CreateGraphicsPipeline(pipeline_desc);
@@ -38,20 +38,21 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     descriptor_set_ = pipeline_->CreateDescriptorSet();
 }
 
-void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& view_proj_buffer, RenderScene const& scene,
+void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, RenderScene const& scene,
     SourceTextureManager const& texture_manager)
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
     texture_manager.BuildDescriptorArray(kMaxMaterialTextures, image_descriptors);
 
     descriptor_set_->Clear();
-    descriptor_set_->BindBuffer(*view_proj_buffer, 0);
+    descriptor_set_->BindBuffer(*camera_buffer, 0);
     descriptor_set_->BindBuffer(*scene.transforms.GpuBuffer(), 1);
     descriptor_set_->BindBuffer(*scene.instances.GpuBuffer(), 2);
     descriptor_set_->BindBuffer(*scene.vertex_colors.GpuBuffer(), 3);
     descriptor_set_->BindBuffer(*scene.bones.GpuBuffer(), 4);
     descriptor_set_->BindBuffer(*scene.ambient_cubes.GpuBuffer(), 5);
-    descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 6);
+    descriptor_set_->BindBuffer(*(scene.prev_transforms ? scene.prev_transforms : scene.transforms.GpuBuffer()), 6);
+    descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 7);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
@@ -66,8 +67,12 @@ char const* DrawSceneTask::GetName() const
 void DrawSceneTask::Execute(RenderTaskContext& context)
 {
     TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kRenderTarget);
+    TransitionRenderImage(context.backend, context.backend_resources.velocity_texture, gpu::ImageLayout::kRenderTarget);
     TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
-    context.backend.cmd_buffer->SetRenderTarget(context.backend_resources.color_texture, context.backend_resources.depth_texture);
+    context.backend.cmd_buffer->ClearImage(context.backend_resources.velocity_texture, 0.0f, 0.0f, 0.0f, 0.0f);
+    context.backend.cmd_buffer->SetRenderTargets(
+        {context.backend_resources.color_texture, context.backend_resources.velocity_texture},
+        context.backend_resources.depth_texture);
     context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
     gpu::BufferPtr const& vertex_buffer = context.scene.vertices.GpuBuffer();
     gpu::BufferPtr const& index_buffer = context.scene.indices.GpuBuffer();

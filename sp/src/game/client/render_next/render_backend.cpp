@@ -33,10 +33,12 @@ void InitializeRenderBackend(char const* source_file_path, RenderBackendContext&
     context.graphics_queue = &context.device->GetQueue(gpu::QueueType::kGraphics);
 
     InitSharedTextures(*context.device, resources.color_texture, resources.shared_depth_texture);
+    resources.velocity_texture = context.device->CreateImage(resources.color_texture->GetWidth(), resources.color_texture->GetHeight(),
+        gpu::ImageFormat::kRG16_Float, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kRenderTarget);
     resources.depth_texture = context.device->CreateImage(resources.color_texture->GetWidth(), resources.color_texture->GetHeight(),
         gpu::ImageFormat::kR32_Typeless, gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kDepthStencil);
 
-    resources.view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
+    resources.camera_buffer = context.device->CreateBuffer(sizeof(VMatrix) * 2, sizeof(VMatrix) * 2,
         gpu::BufferFlags::kConstant);
     resources.inverse_view_proj_buffer = context.device->CreateBuffer(sizeof(VMatrix), sizeof(VMatrix),
         gpu::BufferFlags::kConstant);
