@@ -19,6 +19,7 @@ cbuffer CameraCB : register(b0)
 };
 
 static const uint RENDER_NEW_MAX_TEXTURES = 512;
+static const uint RENDER_NEXT_MAX_SHADOWMAPS = 4;
 
 struct MaterialData
 {
@@ -49,15 +50,18 @@ struct Light
     float cap_distance;
     float fade_start_distance;
     float fade_end_distance;
-    float padding0;
+    uint shadowmap_index;
 };
 
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);
 Texture2D g_lightmap : register(t0, space3);
+Texture2D<float> g_shadowmaps[RENDER_NEXT_MAX_SHADOWMAPS] : register(t0, space4);
 StructuredBuffer<Light> g_scene_lights : register(t7);
 StructuredBuffer<MaterialData> g_scene_materials : register(t8);
+StructuredBuffer<float4x4> g_shadow_matrices : register(t9);
 SamplerState g_sampler : register(s0, space2);
 SamplerState g_lightmap_sampler : register(s1, space2);
+SamplerState g_shadowmap_sampler : register(s2, space2);
 
 struct PSOutput
 {
@@ -139,6 +143,51 @@ float EvaluateVradSpotCone(Light light, float cone_dot)
     return fringe;
 }
 
+float EvaluateDirectionalShadowVisibility(Light light, float3 world_position, float3 world_normal, float diffuse)
+{
+    if (light.shadowmap_index >= RENDER_NEXT_MAX_SHADOWMAPS)
+    {
+        return 1.0f;
+    }
+
+    uint shadowmap_index = NonUniformResourceIndex(light.shadowmap_index);
+    float4 shadow_clip_position = mul(float4(world_position, 1.0f), g_shadow_matrices[shadowmap_index]);
+    float inverse_w = rcp(max(abs(shadow_clip_position.w), 1e-6f));
+    float3 shadow_ndc = shadow_clip_position.xyz * inverse_w;
+    float2 shadow_uv = float2(shadow_ndc.x, -shadow_ndc.y) * 0.5f + 0.5f;
+    if (shadow_uv.x <= 0.0f || shadow_uv.x >= 1.0f || shadow_uv.y <= 0.0f || shadow_uv.y >= 1.0f)
+    {
+        return 1.0f;
+    }
+
+    float shadow_depth = shadow_ndc.z;
+    if (shadow_depth <= 0.0f || shadow_depth >= 1.0f)
+    {
+        return 1.0f;
+    }
+
+    uint shadowmap_width = 0;
+    uint shadowmap_height = 0;
+    g_shadowmaps[shadowmap_index].GetDimensions(shadowmap_width, shadowmap_height);
+    float2 shadow_texel_size = 1.0f / float2(max(shadowmap_width, 1u), max(shadowmap_height, 1u));
+    float shadow_bias = max(0.0005f, 0.0025f * (1.0f - diffuse));
+
+    float shadow_visibility = 0.0f;
+    [unroll]
+    for (int offset_y = -1; offset_y <= 1; ++offset_y)
+    {
+        [unroll]
+        for (int offset_x = -1; offset_x <= 1; ++offset_x)
+        {
+            float2 sample_uv = shadow_uv + float2((float)offset_x, (float)offset_y) * shadow_texel_size;
+            float sampled_depth = g_shadowmaps[shadowmap_index].SampleLevel(g_shadowmap_sampler, sample_uv, 0.0f);
+            shadow_visibility += shadow_depth - shadow_bias <= sampled_depth ? (1.0f / 9.0f) : 0.0f;
+        }
+    }
+
+    return shadow_visibility;
+}
+
 float3 EvaluateLightDiffuse(Light light, float3 world_position, float3 world_normal)
 {
     float3 light_vector = 0.0f;
@@ -170,7 +219,8 @@ float3 EvaluateLightDiffuse(Light light, float3 world_position, float3 world_nor
 
     if (light.type == LIGHT_TYPE_DIRECTIONAL)
     {
-        return light.radiance * diffuse * 0.001f;
+        float shadow_visibility = EvaluateDirectionalShadowVisibility(light, world_position, world_normal, diffuse);
+        return light.radiance * diffuse * shadow_visibility;
     }
 
     float3 light_direction = normalize(light.direction);
@@ -235,11 +285,11 @@ PSOutput main(PSInput input)
     float3 dynamic_direct_linear = albedo_linear * EvaluateSceneDirectLighting(input.world_position, normal);
 
 #if 1
-    baked_linear *= 0.00001f;
+    baked_linear *= 0.3f;
+    dynamic_direct_linear *= 0.7f;
 #else
     dynamic_direct_linear *= 0.000001f;
 #endif
-
 
     float3 output_color = LinearToSrgb(baked_linear + dynamic_direct_linear);
 

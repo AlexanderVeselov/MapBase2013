@@ -28,4 +28,5 @@ private:
     gpu::DescriptorSetPtr descriptor_set_;
     gpu::SamplerPtr texture_sampler_;
     gpu::SamplerPtr lightmap_sampler_;
+    gpu::SamplerPtr shadowmap_sampler_;
 };

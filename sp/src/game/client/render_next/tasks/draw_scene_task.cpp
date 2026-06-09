@@ -4,6 +4,7 @@
 namespace
 {
 constexpr uint32_t kMaxMaterialTextures = 512;
+constexpr uint32_t kMaxShadowmaps = RenderScene::kMaxShadowmaps;
 }
 
 void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer,
@@ -48,6 +49,13 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     lightmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
     lightmap_sampler_ = device->GetSampler(lightmap_sampler_desc);
 
+    gpu::SamplerDesc shadowmap_sampler_desc;
+    shadowmap_sampler_desc.min_filter = gpu::SamplerFilter::kNearest;
+    shadowmap_sampler_desc.mag_filter = gpu::SamplerFilter::kNearest;
+    shadowmap_sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
+    shadowmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
+    shadowmap_sampler_ = device->GetSampler(shadowmap_sampler_desc);
+
     descriptor_set_ = pipeline_->CreateDescriptorSet();
 }
 
@@ -56,6 +64,19 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, Ren
 {
     std::vector<gpu::ImageDescriptor> image_descriptors(kMaxMaterialTextures);
     texture_manager.BuildDescriptorArray(kMaxMaterialTextures, image_descriptors);
+    std::vector<gpu::ImageDescriptor> shadowmap_descriptors(kMaxShadowmaps);
+    for (uint32_t shadowmap_index = 0; shadowmap_index < kMaxShadowmaps; ++shadowmap_index)
+    {
+        gpu::ImagePtr const& shadowmap_image = shadowmap_index < scene.shadowmap_textures.size()
+            ? scene.shadowmap_textures[shadowmap_index]
+            : scene.fallback_shadowmap_texture;
+        if (!shadowmap_image)
+        {
+            continue;
+        }
+
+        shadowmap_descriptors[shadowmap_index].image = shadowmap_image.get();
+    }
 
     descriptor_set_->Clear();
     descriptor_set_->BindBuffer(*camera_buffer, 0);
@@ -67,10 +88,13 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, Ren
     descriptor_set_->BindBuffer(*(scene.prev_transforms ? scene.prev_transforms : scene.transforms.GpuBuffer()), 6);
     descriptor_set_->BindBuffer(*scene.lights.GpuBuffer(), 7);
     descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 8);
+    descriptor_set_->BindBuffer(*scene.shadow_matrices.GpuBuffer(), 9);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);
+    descriptor_set_->BindSampler(*shadowmap_sampler_, 2, 2);
     descriptor_set_->BindImage(*(scene.lightmap_texture ? scene.lightmap_texture : scene.fallback_lightmap_texture), 0, 3);
+    descriptor_set_->BindImageArray(shadowmap_descriptors, 0, 4);
 }
 
 char const* DrawSceneTask::GetName() const

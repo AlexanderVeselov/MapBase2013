@@ -161,6 +161,8 @@ $Project "Client (Episodic)"
 				$File "render_next\tasks\draw_scene_task.h"
 				$File "render_next\tasks\render_graph.cpp"
 				$File "render_next\tasks\render_graph.h"
+				$File "render_next\tasks\render_shadowmaps_task.cpp"
+				$File "render_next\tasks\render_shadowmaps_task.h"
 				$File "render_next\tasks\sky_render_task.cpp"
 				$File "render_next\tasks\sky_render_task.h"
 			}

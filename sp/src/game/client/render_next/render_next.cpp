@@ -10,6 +10,7 @@
 #include "source_adapter/source_texture_manager.h"
 #include "tasks/render_graph.h"
 #include "tasks/sky_render_task.h"
+#include "tasks/render_shadowmaps_task.h"
 #include "tasks/draw_scene_task.h"
 #include "tasks/taa_task.h"
 #include "tasks/copy_depth_task.h"
@@ -45,6 +46,7 @@ private:
     RenderBackendResources backend_resources_;
     RenderGraph render_graph_;
     SkyRenderTask sky_render_task_;
+    RenderShadowmapsTask render_shadowmaps_task_;
     DrawSceneTask draw_opaque_scene_task_;
     DrawSceneTask draw_translucent_scene_task_;
     TaaTask taa_task_;
@@ -58,6 +60,7 @@ private:
     uint32_t jitter_frame_index_ = 0;
     Vector2D previous_camera_jitter_ = Vector2D(0.0f, 0.0f);
     Vector2D current_camera_jitter_ = Vector2D(0.0f, 0.0f);
+    std::array<Vector, 8> current_camera_frustum_corners_ = {};
     VMatrix previous_view_projection_matrix_ = {};
     VMatrix current_view_projection_matrix_ = {};
     bool has_previous_view_projection_ = false;
@@ -96,6 +99,43 @@ void ApplyProjectionJitter(VMatrix const& view_projection_matrix, Vector2D const
     jitter_matrix[1][3] = jitter.y;
     MatrixMultiply(jitter_matrix, view_projection_matrix, *jittered_view_projection_matrix);
 }
+
+std::array<Vector, 8> ComputeCameraFrustumCorners(ViewSetup const& view_setup)
+{
+    std::array<Vector, 8> corners = {};
+
+    Vector forward, right, up;
+    AngleVectors(view_setup.angles, &forward, &right, &up);
+
+    float aspect_ratio = view_setup.m_flAspectRatio > 1e-6f ? view_setup.m_flAspectRatio : 1.0f;
+    float tan_half_fov_x = tanf(DEG2RAD(view_setup.fov) * 0.5f);
+    float tan_half_fov_y = tan_half_fov_x / aspect_ratio;
+
+    float near_distance = view_setup.zNear;
+    float depth_range = Max(view_setup.zFar - view_setup.zNear, 0.0f);
+    float far_distance = near_distance + depth_range * 0.1f;
+    far_distance = Max(far_distance, near_distance + 1.0f);
+
+    float near_half_width = tan_half_fov_x * near_distance;
+    float near_half_height = tan_half_fov_y * near_distance;
+    float far_half_width = tan_half_fov_x * far_distance;
+    float far_half_height = tan_half_fov_y * far_distance;
+
+    Vector near_center = view_setup.origin + forward * near_distance;
+    Vector far_center = view_setup.origin + forward * far_distance;
+
+    corners[0] = near_center + up * near_half_height - right * near_half_width;
+    corners[1] = near_center + up * near_half_height + right * near_half_width;
+    corners[2] = near_center - up * near_half_height - right * near_half_width;
+    corners[3] = near_center - up * near_half_height + right * near_half_width;
+    corners[4] = far_center + up * far_half_height - right * far_half_width;
+    corners[5] = far_center + up * far_half_height + right * far_half_width;
+    corners[6] = far_center - up * far_half_height - right * far_half_width;
+    corners[7] = far_center - up * far_half_height + right * far_half_width;
+
+    return corners;
+}
+
 }
 
 void ComputeViewMatrix(VMatrix* pViewMatrix, const Vector& origin, const QAngle& angles)
@@ -139,10 +179,13 @@ void RenderImpl::Init()
     scene_.bones.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.ambient_cubes.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.lights.Sync(backend_.device, *backend_.cmd_buffer);
+    scene_.shadow_matrices.Append(MakeIdentityShadowMatrix());
+    scene_.shadow_matrices.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.instances.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     sky_render_task_.Initialize(backend_.device, backend_resources_, scene_, texture_manager_);
+    render_shadowmaps_task_.Initialize(backend_.device, scene_, texture_manager_);
     draw_opaque_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_, DrawSceneTask::PassType::kOpaque);
     draw_translucent_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_, DrawSceneTask::PassType::kTranslucent);
     taa_task_.Initialize(backend_.device);
@@ -151,9 +194,11 @@ void RenderImpl::Init()
     SubmitRenderCommandsAndWait(backend_);
     draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    render_shadowmaps_task_.UpdateSceneBindings(scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     render_graph_.Reset();
+    render_graph_.AddTask(render_shadowmaps_task_);
     render_graph_.AddTask(sky_render_task_);
     render_graph_.AddTask(draw_opaque_scene_task_);
     render_graph_.AddTask(draw_translucent_scene_task_);
@@ -187,6 +232,7 @@ void RenderImpl::ReloadPipelines()
     gpu::PipelineReloadResult result = backend_.device->ReloadPipelines();
     draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    render_shadowmaps_task_.UpdateSceneBindings(scene_, texture_manager_);
 
     if (result.success)
     {
@@ -247,6 +293,7 @@ void RenderImpl::SyncSceneToGpu()
     UploadSkyboxTextures();
     draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    render_shadowmaps_task_.UpdateSceneBindings(scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     SubmitRenderCommandsAndWait(backend_);
@@ -277,6 +324,7 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
     VMatrix view_matrix, projection_matrix, view_projection_matrix;
     ComputeViewMatrices(view_setup, &view_matrix, &projection_matrix, &view_projection_matrix);
+    current_camera_frustum_corners_ = ComputeCameraFrustumCorners(view_setup);
     Vector2D jitter = ComputeCameraJitter(jitter_frame_index_, viewport_width_, viewport_height_);
     current_camera_jitter_ = jitter;
     VMatrix jittered_view_projection_matrix;
@@ -310,7 +358,7 @@ void RenderImpl::PrepareFrame(ViewSetup const& view_setup)
 
 void RenderImpl::DrawScene()
 {
-    RenderTaskContext task_context{backend_, backend_resources_, scene_, viewport_width_, viewport_height_};
+    RenderTaskContext task_context{backend_, backend_resources_, scene_, current_camera_frustum_corners_, viewport_width_, viewport_height_};
     render_graph_.Execute(task_context);
 }
 
@@ -350,6 +398,7 @@ void RenderImpl::UpdateRenderableEntities()
     {
         draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
         draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+        render_shadowmaps_task_.UpdateSceneBindings(scene_, texture_manager_);
         sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
         bound_texture_count_ = texture_count_after_update;
     }

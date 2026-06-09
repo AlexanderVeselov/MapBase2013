@@ -100,6 +100,7 @@ struct SceneLight
     static constexpr uint32_t kPoint = 1;
     static constexpr uint32_t kSpot = 2;
     static constexpr uint32_t kSurface = 3;
+    static constexpr uint32_t kInvalidShadowmapIndex = UINT32_MAX;
 
     uint32_t type = kDirectional;
     float radius = 0.0f;
@@ -115,10 +116,25 @@ struct SceneLight
     float cap_distance = 1.0e22f;
     float fade_start_distance = 0.0f;
     float fade_end_distance = -1.0f;
-    float padding0 = 0.0f;
+    uint32_t shadowmap_index = kInvalidShadowmapIndex;
 };
 
 static_assert(sizeof(SceneLight) == 84, "SceneLight must match HLSL Light layout");
+
+struct ShadowMatrix
+{
+    float m[4][4] = {};
+};
+
+inline ShadowMatrix MakeIdentityShadowMatrix()
+{
+    ShadowMatrix matrix = {};
+    matrix.m[0][0] = 1.0f;
+    matrix.m[1][1] = 1.0f;
+    matrix.m[2][2] = 1.0f;
+    matrix.m[3][3] = 1.0f;
+    return matrix;
+}
 
 inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
 {
@@ -149,6 +165,9 @@ inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
 
 struct RenderScene
 {
+    static constexpr uint32_t kMaxShadowmaps = 4;
+    static constexpr uint32_t kShadowmapResolution = 2048;
+
     MirroredBuffer<Vertex> vertices;
     MirroredBuffer<uint32_t> indices;
     MirroredBuffer<SceneTransform> transforms{gpu::BufferFlags::kShaderResource};
@@ -157,11 +176,14 @@ struct RenderScene
     MirroredBuffer<VertexColorData> vertex_colors{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<AmbientCubeColorData> ambient_cubes{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<SceneLight> lights{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<ShadowMatrix> shadow_matrices{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<RenderInstance> instances{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<Material> materials{gpu::BufferFlags::kShaderResource};
     LightmapAtlas lightmap_atlas;
     gpu::ImagePtr fallback_lightmap_texture;
+    gpu::ImagePtr fallback_shadowmap_texture;
     gpu::ImagePtr lightmap_texture;
+    std::vector<gpu::ImagePtr> shadowmap_textures;
     std::array<uint32_t, 6> skybox_texture_ids = {};
 
     void Reset()
@@ -174,11 +196,14 @@ struct RenderScene
         vertex_colors.Reset();
         ambient_cubes.Reset();
         lights.Reset();
+        shadow_matrices.Reset();
         instances.Reset();
         materials.Reset();
         lightmap_atlas = {};
         fallback_lightmap_texture.reset();
+        fallback_shadowmap_texture.reset();
         lightmap_texture.reset();
+        shadowmap_textures.clear();
         skybox_texture_ids.fill(0);
     }
 

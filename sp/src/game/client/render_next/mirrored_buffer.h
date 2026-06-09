@@ -124,6 +124,21 @@ public:
         return cpu_data_[index];
     }
 
+    T* Data()
+    {
+        return cpu_data_.data();
+    }
+
+    T const* Data() const
+    {
+        return cpu_data_.data();
+    }
+
+    void MarkDirtyRange(uint32_t offset, uint32_t count)
+    {
+        MarkDirty(offset, count);
+    }
+
     std::vector<T> ToVector() const
     {
         return cpu_data_;

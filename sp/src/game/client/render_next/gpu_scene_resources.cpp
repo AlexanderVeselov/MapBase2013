@@ -28,6 +28,12 @@ gpu::ImagePtr CreateTextureImage(gpu::DevicePtr const& device, gpu::CommandBuffe
     }
     return image;
 }
+
+gpu::ImagePtr CreateShadowmapImage(gpu::DevicePtr const& device, uint32_t resolution)
+{
+    return device->CreateImage(resolution, resolution, gpu::ImageFormat::kR32_Typeless,
+        gpu::ImageFlags::kShaderResource | gpu::ImageFlags::kDepthStencil);
+}
 }
 
 void RenderScene::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_buffer,
@@ -39,6 +45,14 @@ void RenderScene::EnsureFallbackTextures(gpu::DevicePtr const& device, gpu::Comm
         fallback_lightmap_texture =
             CreateTextureImage(device, cmd_buffer, image_layouts, 1, 1, gpu::ImageFormat::kRGBA8_UNorm,
                 fallback_lightmap_pixels.data(), fallback_lightmap_pixels.size());
+    }
+
+    if (!fallback_shadowmap_texture)
+    {
+        float fallback_shadow_depth = 1.0f;
+        fallback_shadowmap_texture =
+            CreateTextureImage(device, cmd_buffer, image_layouts, 1, 1, gpu::ImageFormat::kR32_Float,
+                &fallback_shadow_depth, sizeof(fallback_shadow_depth));
     }
 }
 
@@ -84,11 +98,44 @@ void SyncRenderSceneToGpu(gpu::DevicePtr const& device, gpu::CommandBuffer& cmd_
     {
         scene.materials.Append(Material{});
     }
+
+    uint32_t assigned_shadowmap_count = 0;
+    SceneLight* lights = scene.lights.Data();
+    for (uint32_t light_index = 0; light_index < scene.lights.Size(); ++light_index)
+    {
+        SceneLight& light = lights[light_index];
+        light.shadowmap_index = SceneLight::kInvalidShadowmapIndex;
+        if (light.type != SceneLight::kDirectional || assigned_shadowmap_count >= RenderScene::kMaxShadowmaps)
+        {
+            continue;
+        }
+
+        light.shadowmap_index = assigned_shadowmap_count++;
+    }
+
+    scene.shadowmap_textures.resize(assigned_shadowmap_count);
+    for (uint32_t shadowmap_index = 0; shadowmap_index < assigned_shadowmap_count; ++shadowmap_index)
+    {
+        if (!scene.shadowmap_textures[shadowmap_index])
+        {
+            scene.shadowmap_textures[shadowmap_index] = CreateShadowmapImage(device, RenderScene::kShadowmapResolution);
+        }
+    }
+
+    scene.shadow_matrices.Reset();
+    uint32_t shadow_matrix_count = assigned_shadowmap_count > 0 ? assigned_shadowmap_count : 1;
+    for (uint32_t shadowmap_index = 0; shadowmap_index < shadow_matrix_count; ++shadowmap_index)
+    {
+        scene.shadow_matrices.Append(MakeIdentityShadowMatrix());
+    }
+
     scene.transforms.Sync(device, cmd_buffer);
     scene.bones.Sync(device, cmd_buffer);
     scene.instances.Sync(device, cmd_buffer);
     scene.ambient_cubes.Sync(device, cmd_buffer);
+    scene.lights.MarkDirtyRange(0, scene.lights.Size());
     scene.lights.Sync(device, cmd_buffer);
+    scene.shadow_matrices.Sync(device, cmd_buffer);
     scene.materials.Sync(device, cmd_buffer);
     scene.vertex_colors.Sync(device, cmd_buffer);
     scene.vertices.Sync(device, cmd_buffer);

@@ -3,6 +3,7 @@
 #include "../render_backend.h"
 #include "../render_scene.h"
 
+#include <array>
 #include <vector>
 
 struct RenderTaskContext
@@ -10,6 +11,7 @@ struct RenderTaskContext
     RenderBackendContext& backend;
     RenderBackendResources& backend_resources;
     RenderScene& scene;
+    std::array<Vector, 8> const& camera_frustum_corners;
     uint32_t viewport_width = 0;
     uint32_t viewport_height = 0;
 };
@@ -32,4 +34,3 @@ public:
 private:
     std::vector<RenderTask*> tasks_;
 };
-
