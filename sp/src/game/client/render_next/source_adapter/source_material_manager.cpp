@@ -54,13 +54,6 @@ bool ResolveSupportedAlbedoTextureName(char const* material_name, std::string& o
         return false;
     }
 
-    char const* shader_name = material->GetShaderName();
-    if (!shader_name || (V_stricmp(shader_name, "LightmappedGeneric") != 0
-            && V_stricmp(shader_name, "VertexLitGeneric") != 0))
-    {
-        return false;
-    }
-
     bool found = false;
     IMaterialVar* base_texture_var = material->FindVar("$basetexture", &found, false);
     if (!found || !base_texture_var)
@@ -85,6 +78,28 @@ bool ResolveSupportedAlbedoTextureName(char const* material_name, std::string& o
     out_texture_name = StripExtension(base_texture_name);
     std::replace(out_texture_name.begin(), out_texture_name.end(), '\\', '/');
     return !out_texture_name.empty();
+}
+
+void ResolveMaterialAlphaTestState(IMaterial* material, Material& out_material)
+{
+    if (!material)
+    {
+        return;
+    }
+
+    if (!material->IsAlphaTested() && !material->GetMaterialVarFlag(MATERIAL_VAR_ALPHATEST))
+    {
+        return;
+    }
+
+    out_material.alpha_test = 1;
+
+    bool found = false;
+    IMaterialVar* alpha_test_reference_var = material->FindVar("$alphatestreference", &found, false);
+    if (found && alpha_test_reference_var)
+    {
+        out_material.alpha_test_reference = alpha_test_reference_var->GetFloatValue();
+    }
 }
 }
 
@@ -121,6 +136,7 @@ uint32_t SourceMaterialManager::LoadMaterial(gpu::DevicePtr const& device, gpu::
     }
 
     Material material = {};
+    ResolveMaterialAlphaTestState(FindNamedMaterial(material_name), material);
     std::string albedo_texture_name;
     if (ResolveSupportedAlbedoTextureName(material_name, albedo_texture_name))
     {

@@ -22,6 +22,9 @@ static const uint RENDER_NEW_MAX_TEXTURES = 512;
 struct MaterialData
 {
     uint albedo_texture_id;
+    uint alpha_test;
+    float alpha_test_reference;
+    float padding0;
 };
 
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);
@@ -61,6 +64,11 @@ PSOutput main(PSInput input)
     float diffuse = 1.0f;//saturate(dot(normal, light)) + 0.1f;
     MaterialData material = g_scene_materials[input.material_index];
     float4 albedo = g_textures[NonUniformResourceIndex(material.albedo_texture_id)].Sample(g_sampler, input.texcoord);
+    if (material.alpha_test != 0)
+    {
+        clip(albedo.a - material.alpha_test_reference);
+    }
+
     float3 albedo_linear = SrgbToLinear(albedo.rgb);
     float3 lightmap_linear = g_lightmap.Sample(g_lightmap_sampler, input.lightmap_texcoord).rgb;
     float3 direct_linear = albedo_linear * diffuse * input.color;
