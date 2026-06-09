@@ -65,7 +65,8 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, Ren
     descriptor_set_->BindBuffer(*scene.bones.GpuBuffer(), 4);
     descriptor_set_->BindBuffer(*scene.ambient_cubes.GpuBuffer(), 5);
     descriptor_set_->BindBuffer(*(scene.prev_transforms ? scene.prev_transforms : scene.transforms.GpuBuffer()), 6);
-    descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 7);
+    descriptor_set_->BindBuffer(*scene.lights.GpuBuffer(), 7);
+    descriptor_set_->BindBuffer(*scene.materials.GpuBuffer(), 8);
     descriptor_set_->BindImageArray(image_descriptors, 0, 1);
     descriptor_set_->BindSampler(*texture_sampler_, 0, 2);
     descriptor_set_->BindSampler(*lightmap_sampler_, 1, 2);

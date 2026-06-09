@@ -94,6 +94,32 @@ struct SceneBoneMatrix
     float m[4][4] = {};
 };
 
+struct SceneLight
+{
+    static constexpr uint32_t kDirectional = 0;
+    static constexpr uint32_t kPoint = 1;
+    static constexpr uint32_t kSpot = 2;
+    static constexpr uint32_t kSurface = 3;
+
+    uint32_t type = kDirectional;
+    float radius = 0.0f;
+    float stopdot = 0.0f;
+    float stopdot2 = 0.0f;
+    float radiance[3] = {};
+    float exponent = 0.0f;
+    float position[3] = {};
+    float constant_attn = 1.0f;
+    float direction[3] = {};
+    float linear_attn = 0.0f;
+    float quadratic_attn = 0.0f;
+    float cap_distance = 1.0e22f;
+    float fade_start_distance = 0.0f;
+    float fade_end_distance = -1.0f;
+    float padding0 = 0.0f;
+};
+
+static_assert(sizeof(SceneLight) == 84, "SceneLight must match HLSL Light layout");
+
 inline SceneBoneMatrix MakeSceneBoneMatrix(matrix3x4_t const& source_transform)
 {
     SceneBoneMatrix bone_matrix = {};
@@ -130,6 +156,7 @@ struct RenderScene
     MirroredBuffer<SceneBoneMatrix> bones{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<VertexColorData> vertex_colors{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<AmbientCubeColorData> ambient_cubes{gpu::BufferFlags::kShaderResource};
+    MirroredBuffer<SceneLight> lights{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<RenderInstance> instances{gpu::BufferFlags::kShaderResource};
     MirroredBuffer<Material> materials{gpu::BufferFlags::kShaderResource};
     LightmapAtlas lightmap_atlas;
@@ -146,6 +173,7 @@ struct RenderScene
         bones.Reset();
         vertex_colors.Reset();
         ambient_cubes.Reset();
+        lights.Reset();
         instances.Reset();
         materials.Reset();
         lightmap_atlas = {};

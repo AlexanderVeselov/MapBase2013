@@ -56,6 +56,7 @@ struct VSOutput
     float3 color : TEXCOORD3;
     float4 curr_clip_position : TEXCOORD4;
     float4 prev_clip_position : TEXCOORD5;
+    float3 world_position : TEXCOORD6;
 };
 
 float3 VertexShaderAmbientLight(const float3 worldNormal, uint ambient_cube_offset)
@@ -118,6 +119,7 @@ VSOutput main(VSInput input, uint vertex_id : SV_VertexID)
     output.curr_clip_position = mul(world_position, g_view_projection);
     output.position = output.curr_clip_position;
     output.normal = normalize(world_normal);
+    output.world_position = world_position_xyz;
     output.texcoord = input.texcoord;
     output.lightmap_texcoord = input.lightmap_texcoord;
     output.material_index = instance_data.material_index;

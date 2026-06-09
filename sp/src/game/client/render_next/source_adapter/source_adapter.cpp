@@ -138,6 +138,7 @@ void SourceAdapter::BuildWorldScene(char const* level_name, RenderScene& out_sce
     out_scene.transforms.Append(MakeIdentitySceneTransform());
     LoadBsp(resolved_level_name, out_scene, device, cmd_buffer, image_layouts, texture_manager, material_manager, model_manager_,
         out_scene.lightmap_atlas, build_cache_.brush_model_ranges);
+    light_adapter_.LoadWorldLights(resolved_level_name, out_scene);
 
     build_cache_.static_transforms = out_scene.transforms.ToVector();
     build_cache_.static_vertex_colors = out_scene.vertex_colors.ToVector();

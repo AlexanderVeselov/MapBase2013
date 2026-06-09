@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../engine_adapter.h"
+#include "source_light_adapter.h"
 #include "source_model_manager.h"
 #include "source_renderable_entity_adapter.h"
 #include "source_scene_cache.h"
@@ -24,6 +25,7 @@ public:
         SourceMaterialManager& material_manager) override;
 
     SourceRenderableEntityAdapter renderable_entity_adapter_;
+    SourceLightAdapter light_adapter_;
     SourceModelManager model_manager_;
     SourceSceneBuildCache build_cache_;
 };

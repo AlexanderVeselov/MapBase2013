@@ -8,6 +8,7 @@ struct PSInput
     float3 color : TEXCOORD3;
     float4 curr_clip_position : TEXCOORD4;
     float4 prev_clip_position : TEXCOORD5;
+    float3 world_position : TEXCOORD6;
 };
 
 cbuffer CameraCB : register(b0)
@@ -27,9 +28,34 @@ struct MaterialData
     float alpha_test_reference;
 };
 
+static const uint LIGHT_TYPE_DIRECTIONAL = 0u;
+static const uint LIGHT_TYPE_POINT = 1u;
+static const uint LIGHT_TYPE_SPOT = 2u;
+static const uint LIGHT_TYPE_SURFACE = 3u;
+
+struct Light
+{
+    uint type;
+    float radius;
+    float stopdot;
+    float stopdot2;
+    float3 radiance;
+    float exponent;
+    float3 position;
+    float constant_attn;
+    float3 direction;
+    float linear_attn;
+    float quadratic_attn;
+    float cap_distance;
+    float fade_start_distance;
+    float fade_end_distance;
+    float padding0;
+};
+
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);
 Texture2D g_lightmap : register(t0, space3);
-StructuredBuffer<MaterialData> g_scene_materials : register(t7);
+StructuredBuffer<Light> g_scene_lights : register(t7);
+StructuredBuffer<MaterialData> g_scene_materials : register(t8);
 SamplerState g_sampler : register(s0, space2);
 SamplerState g_lightmap_sampler : register(s1, space2);
 
@@ -56,12 +82,146 @@ float3 LinearToSrgb(float3 color)
     return lerp(srgb_high, srgb_low, use_linear);
 }
 
+float EvaluateLightFade(float distance_to_light, float fade_start_distance, float fade_end_distance)
+{
+    if (fade_end_distance <= fade_start_distance)
+    {
+        return 1.0f;
+    }
+
+    float t = saturate((distance_to_light - fade_start_distance) / max(fade_end_distance - fade_start_distance, 1e-6f));
+    float inv_t = 1.0f - t;
+
+    // Match VRAD's QuinticInterpolatingPolynomial.
+    return inv_t * inv_t * inv_t * (inv_t * (inv_t * 6.0f - 15.0f) + 10.0f);
+}
+
+float EvaluateVradDistanceAttenuation(Light light, float distance_to_light, float distance_squared)
+{
+    if (light.radius > 0.0f && distance_squared > light.radius * light.radius)
+    {
+        return 0.0f;
+    }
+
+    float clamped_distance = max(distance_to_light, 1.0f);
+    float falloff_eval_distance = light.cap_distance > 0.0f ? min(clamped_distance, light.cap_distance) : clamped_distance;
+
+    float attenuation = light.constant_attn
+        + light.linear_attn * falloff_eval_distance
+        + light.quadratic_attn * falloff_eval_distance * falloff_eval_distance;
+    if (attenuation <= 1e-6f)
+    {
+        return 0.0f;
+    }
+
+    float falloff = rcp(attenuation);
+    return falloff * EvaluateLightFade(distance_to_light, light.fade_start_distance, light.fade_end_distance);
+}
+
+float EvaluateVradSpotCone(Light light, float cone_dot)
+{
+    if (cone_dot <= light.stopdot2)
+    {
+        return 0.0f;
+    }
+
+    if (cone_dot > light.stopdot)
+    {
+        return 1.0f;
+    }
+
+    float fringe = saturate((cone_dot - light.stopdot2) / max(light.stopdot - light.stopdot2, 1e-6f));
+    if (light.exponent != 0.0f && light.exponent != 1.0f)
+    {
+        fringe = pow(fringe, light.exponent);
+    }
+
+    return fringe;
+}
+
+float3 EvaluateLightDiffuse(Light light, float3 world_position, float3 world_normal)
+{
+    float3 light_vector = 0.0f;
+    float distance_squared = 0.0f;
+    float distance_to_light = 0.0f;
+
+    if (light.type == LIGHT_TYPE_DIRECTIONAL)
+    {
+        light_vector = normalize(-light.direction);
+    }
+    else
+    {
+        float3 delta = light.position - world_position;
+        distance_squared = dot(delta, delta);
+        if (distance_squared <= 1e-12f)
+        {
+            return 0.0f;
+        }
+
+        distance_to_light = sqrt(distance_squared);
+        light_vector = delta / distance_to_light;
+    }
+
+    float diffuse = saturate(dot(world_normal, light_vector));
+    if (diffuse <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    if (light.type == LIGHT_TYPE_DIRECTIONAL)
+    {
+        return light.radiance * diffuse * 0.001f;
+    }
+
+    float3 light_direction = normalize(light.direction);
+
+    if (light.type == LIGHT_TYPE_SURFACE)
+    {
+        float emitter_dot = saturate(dot(-light_vector, light_direction));
+        return light.radiance * (diffuse * emitter_dot * rcp(max(distance_squared, 1e-6f)));
+    }
+
+    float attenuation = EvaluateVradDistanceAttenuation(light, distance_to_light, distance_squared);
+    if (attenuation <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    if (light.type == LIGHT_TYPE_SPOT)
+    {
+        float emitter_dot = dot(-light_vector, light_direction);
+        if (emitter_dot <= light.stopdot2)
+        {
+            return 0.0f;
+        }
+
+        attenuation *= emitter_dot;
+        attenuation *= EvaluateVradSpotCone(light, emitter_dot);
+    }
+
+    return light.radiance * (diffuse * attenuation);
+}
+
+float3 EvaluateSceneDirectLighting(float3 world_position, float3 world_normal)
+{
+    uint light_count = 0;
+    uint light_stride = 0;
+    g_scene_lights.GetDimensions(light_count, light_stride);
+
+    float3 total_radiance = 0.0f;
+    [loop]
+    for (uint light_index = 0; light_index < light_count; ++light_index)
+    {
+        total_radiance += EvaluateLightDiffuse(g_scene_lights[light_index], world_position, world_normal);
+    }
+
+    return total_radiance;
+}
+
 PSOutput main(PSInput input)
 {
     PSOutput output;
-    float3 light = normalize(float3(0.5f, 0.75f, 1.0f));
     float3 normal = normalize(input.normal);
-    float diffuse = 1.0f;//saturate(dot(normal, light)) + 0.1f;
     MaterialData material = g_scene_materials[input.material_index];
     float4 albedo = g_textures[NonUniformResourceIndex(material.albedo_texture_id)].Sample(g_sampler, input.texcoord);
     if (material.alpha_test != 0)
@@ -71,8 +231,17 @@ PSOutput main(PSInput input)
 
     float3 albedo_linear = SrgbToLinear(albedo.rgb);
     float3 lightmap_linear = g_lightmap.Sample(g_lightmap_sampler, input.lightmap_texcoord).rgb;
-    float3 direct_linear = albedo_linear * diffuse * input.color;
-    float3 output_color = LinearToSrgb(direct_linear * lightmap_linear);
+    float3 baked_linear = albedo_linear * input.color * lightmap_linear;
+    float3 dynamic_direct_linear = albedo_linear * EvaluateSceneDirectLighting(input.world_position, normal);
+
+#if 1
+    baked_linear *= 0.00001f;
+#else
+    dynamic_direct_linear *= 0.000001f;
+#endif
+
+
+    float3 output_color = LinearToSrgb(baked_linear + dynamic_direct_linear);
 
     float2 curr_ndc = input.curr_clip_position.xy / max(abs(input.curr_clip_position.w), 1e-6f);
     float2 prev_ndc = input.prev_clip_position.xy / max(abs(input.prev_clip_position.w), 1e-6f);
