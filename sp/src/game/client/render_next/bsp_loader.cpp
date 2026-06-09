@@ -677,6 +677,9 @@ struct BspGeometryBuilder
             {
                 vertex_data.normal = base_surface_normal.Normalized();
             }
+
+            // Flip normal. TODO: why is normal incorrect before this flip?
+            vertex_data.normal *= -1.0f;
         }
 
         for (DispTriangle const& triangle : disp_triangles)
