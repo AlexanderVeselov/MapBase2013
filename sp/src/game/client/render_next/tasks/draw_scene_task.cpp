@@ -7,17 +7,29 @@ constexpr uint32_t kMaxMaterialTextures = 512;
 }
 
 void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer,
-    RenderScene const& scene)
+    RenderScene const& scene, PassType pass_type)
 {
     (void)camera_buffer;
     (void)scene;
+    pass_type_ = pass_type;
 
     gpu::GraphicsPipelineDesc pipeline_desc;
     pipeline_desc.vs_filename = "render_scene.vs";
     pipeline_desc.ps_filename = "render_scene.ps";
     pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm, gpu::ImageFormat::kRG16_Float};
     pipeline_desc.depth_enabled = true;
+    pipeline_desc.depth_write_enabled = pass_type_ == PassType::kOpaque;
     pipeline_desc.depth_attachment_format = gpu::ImageFormat::kR32_Typeless;
+    if (pass_type_ == PassType::kTranslucent)
+    {
+        pipeline_desc.color_blend_attachments.resize(2);
+        pipeline_desc.color_blend_attachments[0].blend_enabled = true;
+        pipeline_desc.color_blend_attachments[0].src_color_blend_factor = gpu::BlendFactor::kSrcAlpha;
+        pipeline_desc.color_blend_attachments[0].dst_color_blend_factor = gpu::BlendFactor::kOneMinusSrcAlpha;
+        pipeline_desc.color_blend_attachments[0].src_alpha_blend_factor = gpu::BlendFactor::kOne;
+        pipeline_desc.color_blend_attachments[0].dst_alpha_blend_factor = gpu::BlendFactor::kOneMinusSrcAlpha;
+        pipeline_desc.color_blend_attachments[1].color_write_mask = gpu::kColorWriteNone;
+    }
     pipeline_ = device->CreateGraphicsPipeline(pipeline_desc);
 
     gpu::SamplerDesc sampler_desc;
@@ -61,19 +73,27 @@ void DrawSceneTask::UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, Ren
 
 char const* DrawSceneTask::GetName() const
 {
-    return "DrawScene";
+    return pass_type_ == PassType::kOpaque ? "DrawSceneOpaque" : "DrawSceneTranslucent";
 }
 
 void DrawSceneTask::Execute(RenderTaskContext& context)
 {
-    TransitionRenderImage(context.backend, context.backend_resources.scene_color_texture, gpu::ImageLayout::kRenderTarget);
-    TransitionRenderImage(context.backend, context.backend_resources.velocity_texture, gpu::ImageLayout::kRenderTarget);
-    TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
-    context.backend.cmd_buffer->ClearImage(context.backend_resources.velocity_texture, 0.0f, 0.0f, 0.0f, 0.0f);
+    if (pass_type_ == PassType::kOpaque)
+    {
+        TransitionRenderImage(context.backend, context.backend_resources.scene_color_texture, gpu::ImageLayout::kRenderTarget);
+        TransitionRenderImage(context.backend, context.backend_resources.velocity_texture, gpu::ImageLayout::kRenderTarget);
+        TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kRenderTarget);
+        context.backend.cmd_buffer->ClearImage(context.backend_resources.velocity_texture, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
     context.backend.cmd_buffer->SetRenderTargets(
         {context.backend_resources.scene_color_texture, context.backend_resources.velocity_texture},
         context.backend_resources.depth_texture);
-    context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
+    if (pass_type_ == PassType::kOpaque)
+    {
+        context.backend.cmd_buffer->ClearDepthImage(context.backend_resources.depth_texture, 1.0f);
+    }
+
     gpu::BufferPtr const& vertex_buffer = context.scene.vertices.GpuBuffer();
     gpu::BufferPtr const& index_buffer = context.scene.indices.GpuBuffer();
     if (!vertex_buffer || !index_buffer || context.scene.instances.Size() == 0)
@@ -89,6 +109,17 @@ void DrawSceneTask::Execute(RenderTaskContext& context)
     {
         RenderInstance const& instance = context.scene.instances[instance_index];
         if (instance.index_count == 0 || instance.is_visible == RenderInstance::kHidden)
+        {
+            continue;
+        }
+
+        bool translucent = false;
+        if (instance.material_index < context.scene.materials.Size())
+        {
+            translucent = context.scene.materials[instance.material_index].translucent != 0;
+        }
+
+        if ((pass_type_ == PassType::kTranslucent) != translucent)
         {
             continue;
         }

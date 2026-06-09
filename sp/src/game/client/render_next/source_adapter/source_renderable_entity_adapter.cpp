@@ -74,7 +74,7 @@ void SourceRenderableEntityAdapter::UpdateRenderableEntities(RenderScene& scene,
         }
 
         IClientRenderable* renderable = entity->GetClientRenderable();
-        if (!renderable || !renderable->ShouldDraw() || renderable->IsTransparent())
+        if (!renderable || !renderable->ShouldDraw())
         {
             continue;
         }

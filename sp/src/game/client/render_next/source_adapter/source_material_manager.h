@@ -16,8 +16,8 @@ struct Material
 {
     uint32_t albedo_texture_id = 0;
     uint32_t alpha_test = 0;
+    uint32_t translucent = 0;
     float alpha_test_reference = 0.5f;
-    float padding0 = 0.0f;
 };
 
 class SourceMaterialManager

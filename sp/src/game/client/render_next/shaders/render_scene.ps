@@ -23,8 +23,8 @@ struct MaterialData
 {
     uint albedo_texture_id;
     uint alpha_test;
+    uint translucent;
     float alpha_test_reference;
-    float padding0;
 };
 
 Texture2D g_textures[RENDER_NEW_MAX_TEXTURES] : register(t0, space1);

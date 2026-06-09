@@ -10,12 +10,20 @@
 class DrawSceneTask final : public RenderTask
 {
 public:
-    void Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer, RenderScene const& scene);
+    enum class PassType
+    {
+        kOpaque,
+        kTranslucent
+    };
+
+    void Initialize(gpu::DevicePtr const& device, gpu::BufferPtr const& camera_buffer, RenderScene const& scene,
+        PassType pass_type);
     void UpdateSceneBindings(gpu::BufferPtr const& camera_buffer, RenderScene const& scene, SourceTextureManager const& texture_manager);
     char const* GetName() const override;
     void Execute(RenderTaskContext& context) override;
 
 private:
+    PassType pass_type_ = PassType::kOpaque;
     gpu::GraphicsPipelinePtr pipeline_;
     gpu::DescriptorSetPtr descriptor_set_;
     gpu::SamplerPtr texture_sampler_;

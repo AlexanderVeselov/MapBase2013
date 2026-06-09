@@ -101,6 +101,19 @@ void ResolveMaterialAlphaTestState(IMaterial* material, Material& out_material)
         out_material.alpha_test_reference = alpha_test_reference_var->GetFloatValue();
     }
 }
+
+void ResolveMaterialTransparencyState(IMaterial* material, Material& out_material)
+{
+    if (!material)
+    {
+        return;
+    }
+
+    if (material->IsTranslucent() || material->GetMaterialVarFlag(MATERIAL_VAR_TRANSLUCENT))
+    {
+        out_material.translucent = 1;
+    }
+}
 }
 
 void SourceMaterialManager::Reset()
@@ -136,7 +149,9 @@ uint32_t SourceMaterialManager::LoadMaterial(gpu::DevicePtr const& device, gpu::
     }
 
     Material material = {};
-    ResolveMaterialAlphaTestState(FindNamedMaterial(material_name), material);
+    IMaterial* source_material = FindNamedMaterial(material_name);
+    ResolveMaterialAlphaTestState(source_material, material);
+    ResolveMaterialTransparencyState(source_material, material);
     std::string albedo_texture_name;
     if (ResolveSupportedAlbedoTextureName(material_name, albedo_texture_name))
     {

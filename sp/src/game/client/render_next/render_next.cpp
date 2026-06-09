@@ -45,7 +45,8 @@ private:
     RenderBackendResources backend_resources_;
     RenderGraph render_graph_;
     SkyRenderTask sky_render_task_;
-    DrawSceneTask draw_scene_task_;
+    DrawSceneTask draw_opaque_scene_task_;
+    DrawSceneTask draw_translucent_scene_task_;
     TaaTask taa_task_;
     CopyDepthTask copy_depth_task_;
     RenderScene scene_;
@@ -141,17 +142,20 @@ void RenderImpl::Init()
     scene_.vertex_colors.Sync(backend_.device, *backend_.cmd_buffer);
     scene_.materials.Sync(backend_.device, *backend_.cmd_buffer);
     sky_render_task_.Initialize(backend_.device, backend_resources_, scene_, texture_manager_);
-    draw_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_);
+    draw_opaque_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_, DrawSceneTask::PassType::kOpaque);
+    draw_translucent_scene_task_.Initialize(backend_.device, backend_resources_.camera_buffer, scene_, DrawSceneTask::PassType::kTranslucent);
     taa_task_.Initialize(backend_.device);
     copy_depth_task_.Initialize(backend_.device, backend_resources_);
     UploadSkyboxTextures();
     SubmitRenderCommandsAndWait(backend_);
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     render_graph_.Reset();
     render_graph_.AddTask(sky_render_task_);
-    render_graph_.AddTask(draw_scene_task_);
+    render_graph_.AddTask(draw_opaque_scene_task_);
+    render_graph_.AddTask(draw_translucent_scene_task_);
     render_graph_.AddTask(taa_task_);
     render_graph_.AddTask(copy_depth_task_);
 }
@@ -180,7 +184,8 @@ void RenderImpl::ReloadPipelines()
     }
 
     gpu::PipelineReloadResult result = backend_.device->ReloadPipelines();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
 
     if (result.success)
     {
@@ -239,7 +244,8 @@ void RenderImpl::SyncSceneToGpu()
         scene_, texture_manager_, material_manager_);
     SnapshotCurrentTransformsAsPrevious();
     UploadSkyboxTextures();
-    draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+    draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
     sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
     bound_texture_count_ = texture_manager_.GetTextureCount();
     SubmitRenderCommandsAndWait(backend_);
@@ -340,7 +346,8 @@ void RenderImpl::UpdateRenderableEntities()
     uint32_t texture_count_after_update = texture_manager_.GetTextureCount();
     if (texture_count_after_update != texture_count_before_update || texture_count_after_update != bound_texture_count_)
     {
-        draw_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+        draw_opaque_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
+        draw_translucent_scene_task_.UpdateSceneBindings(backend_resources_.camera_buffer, scene_, texture_manager_);
         sky_render_task_.UpdateBindings(backend_resources_, scene_, texture_manager_);
         bound_texture_count_ = texture_count_after_update;
     }
