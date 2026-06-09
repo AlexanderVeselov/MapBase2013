@@ -51,15 +51,17 @@ void TaaTask::Execute(RenderTaskContext& context)
 
     TransitionRenderImage(context.backend, context.backend_resources.scene_color_texture, gpu::ImageLayout::kShaderRead);
     TransitionRenderImage(context.backend, context.backend_resources.velocity_texture, gpu::ImageLayout::kShaderRead);
+    TransitionRenderImage(context.backend, context.backend_resources.depth_texture, gpu::ImageLayout::kShaderRead);
     TransitionRenderImage(context.backend, history_input, gpu::ImageLayout::kShaderRead);
     TransitionRenderImage(context.backend, context.backend_resources.color_texture, gpu::ImageLayout::kShaderReadWrite);
 
     descriptor_set_->Clear();
     descriptor_set_->BindImage(*context.backend_resources.scene_color_texture, 0);
     descriptor_set_->BindImage(*context.backend_resources.velocity_texture, 1);
-    descriptor_set_->BindImage(*history_input, 2);
-    descriptor_set_->BindImage(*context.backend_resources.color_texture, 3);
-    descriptor_set_->BindSampler(*history_sampler_, 4);
+    descriptor_set_->BindImage(*context.backend_resources.depth_texture, 2);
+    descriptor_set_->BindImage(*history_input, 3);
+    descriptor_set_->BindImage(*context.backend_resources.color_texture, 4);
+    descriptor_set_->BindSampler(*history_sampler_, 5);
 
     context.backend.cmd_buffer->BindPipeline(pipeline_);
     context.backend.cmd_buffer->BindDescriptorSet(descriptor_set_);

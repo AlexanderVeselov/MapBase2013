@@ -16,6 +16,7 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     gpu::GraphicsPipelineDesc pipeline_desc;
     pipeline_desc.vs_filename = "render_scene.vs";
     pipeline_desc.ps_filename = "render_scene.ps";
+    pipeline_desc.cull_mode = pass_type_ == PassType::kOpaque ? gpu::CullMode::kBack : gpu::CullMode::kNone;
     pipeline_desc.color_attachment_formats = {gpu::ImageFormat::kBGRA8_UNorm, gpu::ImageFormat::kRG16_Float};
     pipeline_desc.depth_enabled = true;
     pipeline_desc.depth_write_enabled = pass_type_ == PassType::kOpaque;

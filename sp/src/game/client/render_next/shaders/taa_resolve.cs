@@ -1,8 +1,9 @@
 Texture2D<float4> g_current_color : register(t0);
 Texture2D<float2> g_velocity : register(t1);
-Texture2D<float4> g_history_color : register(t2);
-RWTexture2D<float4> g_output_color : register(u3);
-SamplerState g_history_sampler : register(s4);
+Texture2D<float> g_depth : register(t2);
+Texture2D<float4> g_history_color : register(t3);
+RWTexture2D<float4> g_output_color : register(u4);
+SamplerState g_history_sampler : register(s5);
 
 static const float kHistoryWeight = 0.7f;
 
@@ -30,6 +31,30 @@ float3 AccumulateHistory(float3 current, float3 history)
     return InverseReinhardToneMap(accumulated_tone_mapped);
 }
 
+float2 SampleDilatedVelocity(int2 pixel, uint2 texture_size)
+{
+    float closest_depth = g_depth.Load(int3(pixel, 0));
+    float2 resolved_velocity = g_velocity.Load(int3(pixel, 0));
+
+    [unroll]
+    for (int y = -1; y <= 1; ++y)
+    {
+        [unroll]
+        for (int x = -1; x <= 1; ++x)
+        {
+            int2 sample_pixel = clamp(pixel + int2(x, y), int2(0, 0), int2(texture_size) - 1);
+            float sample_depth = g_depth.Load(int3(sample_pixel, 0));
+            if (sample_depth < closest_depth)
+            {
+                closest_depth = sample_depth;
+                resolved_velocity = g_velocity.Load(int3(sample_pixel, 0));
+            }
+        }
+    }
+
+    return resolved_velocity;
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
 {
@@ -43,7 +68,7 @@ void main(uint3 dispatch_thread_id : SV_DispatchThreadID)
     int2 pixel = int2(dispatch_thread_id.xy);
     float4 current_sample = g_current_color.Load(int3(pixel, 0));
     float2 uv = (float2(dispatch_thread_id.xy) + 0.5f) / float2(texture_size);
-    float2 velocity = g_velocity.Load(int3(pixel, 0));
+    float2 velocity = SampleDilatedVelocity(pixel, texture_size);
     float2 history_uv = uv - velocity;
     bool history_valid = all(history_uv >= float2(0.0f, 0.0f)) && all(history_uv <= float2(1.0f, 1.0f));
 
