@@ -61,7 +61,7 @@ StructuredBuffer<MaterialData> g_scene_materials : register(t8);
 StructuredBuffer<float4x4> g_shadow_matrices : register(t9);
 SamplerState g_sampler : register(s0, space2);
 SamplerState g_lightmap_sampler : register(s1, space2);
-SamplerState g_shadowmap_sampler : register(s2, space2);
+SamplerComparisonState g_shadowmap_sampler : register(s2, space2);
 
 struct PSOutput
 {
@@ -166,26 +166,9 @@ float EvaluateDirectionalShadowVisibility(Light light, float3 world_position, fl
         return 1.0f;
     }
 
-    uint shadowmap_width = 0;
-    uint shadowmap_height = 0;
-    g_shadowmaps[shadowmap_index].GetDimensions(shadowmap_width, shadowmap_height);
-    float2 shadow_texel_size = 1.0f / float2(max(shadowmap_width, 1u), max(shadowmap_height, 1u));
     float shadow_bias = max(0.0005f, 0.0025f * (1.0f - diffuse));
 
-    float shadow_visibility = 0.0f;
-    [unroll]
-    for (int offset_y = -1; offset_y <= 1; ++offset_y)
-    {
-        [unroll]
-        for (int offset_x = -1; offset_x <= 1; ++offset_x)
-        {
-            float2 sample_uv = shadow_uv + float2((float)offset_x, (float)offset_y) * shadow_texel_size;
-            float sampled_depth = g_shadowmaps[shadowmap_index].SampleLevel(g_shadowmap_sampler, sample_uv, 0.0f);
-            shadow_visibility += shadow_depth - shadow_bias <= sampled_depth ? (1.0f / 9.0f) : 0.0f;
-        }
-    }
-
-    return shadow_visibility;
+    return g_shadowmaps[shadowmap_index].SampleCmpLevelZero(g_shadowmap_sampler, shadow_uv, shadow_depth - shadow_bias);
 }
 
 float3 EvaluateLightDiffuse(Light light, float3 world_position, float3 world_normal)
@@ -285,8 +268,8 @@ PSOutput main(PSInput input)
     float3 dynamic_direct_linear = albedo_linear * EvaluateSceneDirectLighting(input.world_position, normal);
 
 #if 1
-    baked_linear *= 0.3f;
-    dynamic_direct_linear *= 0.7f;
+    baked_linear *= 0.1f;
+    dynamic_direct_linear *= 0.9f;
 #else
     dynamic_direct_linear *= 0.000001f;
 #endif

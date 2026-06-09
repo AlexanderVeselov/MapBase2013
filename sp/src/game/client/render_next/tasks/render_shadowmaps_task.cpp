@@ -35,6 +35,22 @@ VMatrix BuildLookAtMatrix(Vector const& eye, Vector const& target, Vector const&
         0.0f, 0.0f, 0.0f, 1.0f);
     return world_to_view;
 }
+
+void SnapShadowMatrixToTexelGrid(VMatrix& world_to_shadow)
+{
+    Vector shadow_origin_clip;
+    Vector3DMultiplyPosition(world_to_shadow, Vector(0.0f, 0.0f, 0.0f), shadow_origin_clip);
+
+    float shadow_origin_texel_x = shadow_origin_clip.x * (static_cast<float>(RenderScene::kShadowmapResolution) * 0.5f);
+    float shadow_origin_texel_y = shadow_origin_clip.y * (static_cast<float>(RenderScene::kShadowmapResolution) * 0.5f);
+    float rounded_texel_x = std::floor(shadow_origin_texel_x + 0.5f);
+    float rounded_texel_y = std::floor(shadow_origin_texel_y + 0.5f);
+    float offset_x = (rounded_texel_x - shadow_origin_texel_x) * (2.0f / static_cast<float>(RenderScene::kShadowmapResolution));
+    float offset_y = (rounded_texel_y - shadow_origin_texel_y) * (2.0f / static_cast<float>(RenderScene::kShadowmapResolution));
+
+    world_to_shadow[0][3] += offset_x;
+    world_to_shadow[1][3] += offset_y;
+}
 }
 
 void RenderShadowmapsTask::Initialize(gpu::DevicePtr const& device, RenderScene const& scene,
@@ -114,49 +130,54 @@ bool RenderShadowmapsTask::BuildDirectionalShadowMatrix(
 
     VMatrix world_to_light = BuildLookAtMatrix(eye, center, up);
 
-    Vector light_min(FLT_MAX, FLT_MAX, FLT_MAX);
-    Vector light_max(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     float light_min_z = FLT_MAX;
     float light_max_z = -FLT_MAX;
+    float shadow_radius = 0.0f;
 
     for (Vector const& corner : frustum_corners)
     {
         Vector light_space_corner;
         Vector3DMultiplyPosition(world_to_light, corner, light_space_corner);
 
-        light_min.x = Min(light_min.x, light_space_corner.x);
-        light_min.y = Min(light_min.y, light_space_corner.y);
         light_min_z = Min(light_min_z, light_space_corner.z);
-        light_max.x = Max(light_max.x, light_space_corner.x);
-        light_max.y = Max(light_max.y, light_space_corner.y);
         light_max_z = Max(light_max_z, light_space_corner.z);
+
+        shadow_radius = Max(shadow_radius, (corner - center).Length());
     }
 
-    light_min.x -= kXYRadiusPadding;
-    light_min.y -= kXYRadiusPadding;
-    light_max.x += kXYRadiusPadding;
-    light_max.y += kXYRadiusPadding;
+    shadow_radius = Max(shadow_radius + kXYRadiusPadding, 1.0f);
+
+    Vector light_space_center;
+    Vector3DMultiplyPosition(world_to_light, center, light_space_center);
+
+    float shadow_diameter = shadow_radius * 2.0f;
+    float shadow_texel_size = shadow_diameter / static_cast<float>(RenderScene::kShadowmapResolution);
+    float snapped_shadow_center_x = std::floor(light_space_center.x / shadow_texel_size + 0.5f) * shadow_texel_size;
+    float snapped_shadow_center_y = std::floor(light_space_center.y / shadow_texel_size + 0.5f) * shadow_texel_size;
+
+    float light_min_x = snapped_shadow_center_x - shadow_radius;
+    float light_max_x = snapped_shadow_center_x + shadow_radius;
+    float light_min_y = snapped_shadow_center_y - shadow_radius;
+    float light_max_y = snapped_shadow_center_y + shadow_radius;
+
     light_min_z -= kCasterDepthPadding;
     light_max_z += kCasterDepthPadding;
 
-    light_min.x = -1024.0f;
-    light_max.x = 1024.0f;
-    light_min.y = -1024.0f;
-    light_max.y = 1024.0f;
     float light_near_z = Max(1.0f, -light_max_z);
     float light_far_z = Max(light_near_z + 1.0f, -light_min_z);
 
     VMatrix light_to_clip;
     MatrixBuildOrtho(
         light_to_clip,
-        light_min.x,
-        light_max.y,
-        light_max.x,
-        light_min.y,
+        light_min_x,
+        light_max_y,
+        light_max_x,
+        light_min_y,
         light_near_z,
         light_far_z);
 
     MatrixMultiply(light_to_clip, world_to_light, out_world_to_shadow);
+    SnapShadowMatrixToTexelGrid(out_world_to_shadow);
     return true;
 }
 

@@ -50,10 +50,12 @@ void DrawSceneTask::Initialize(gpu::DevicePtr const& device, gpu::BufferPtr cons
     lightmap_sampler_ = device->GetSampler(lightmap_sampler_desc);
 
     gpu::SamplerDesc shadowmap_sampler_desc;
-    shadowmap_sampler_desc.min_filter = gpu::SamplerFilter::kNearest;
-    shadowmap_sampler_desc.mag_filter = gpu::SamplerFilter::kNearest;
+    shadowmap_sampler_desc.min_filter = gpu::SamplerFilter::kLinear;
+    shadowmap_sampler_desc.mag_filter = gpu::SamplerFilter::kLinear;
     shadowmap_sampler_desc.address_u = gpu::SamplerAddressMode::kClampToEdge;
     shadowmap_sampler_desc.address_v = gpu::SamplerAddressMode::kClampToEdge;
+    shadowmap_sampler_desc.address_w = gpu::SamplerAddressMode::kClampToEdge;
+    shadowmap_sampler_desc.comparison_func = gpu::SamplerComparisonFunc::kLessEqual;
     shadowmap_sampler_ = device->GetSampler(shadowmap_sampler_desc);
 
     descriptor_set_ = pipeline_->CreateDescriptorSet();

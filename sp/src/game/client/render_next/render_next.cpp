@@ -113,7 +113,7 @@ std::array<Vector, 8> ComputeCameraFrustumCorners(ViewSetup const& view_setup)
 
     float near_distance = view_setup.zNear;
     float depth_range = Max(view_setup.zFar - view_setup.zNear, 0.0f);
-    float far_distance = near_distance + depth_range * 0.1f;
+    float far_distance = 1024.0f;//near_distance + depth_range * 0.02f;
     far_distance = Max(far_distance, near_distance + 1.0f);
 
     float near_half_width = tan_half_fov_x * near_distance;
